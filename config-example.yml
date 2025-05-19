@@ -1,0 +1,7 @@
+# Service
+PORT: 8080
+# DB
+DB_HOST: ""
+DB_PORT: 5479
+DB_USER: ""
+DB_PWD: ""
