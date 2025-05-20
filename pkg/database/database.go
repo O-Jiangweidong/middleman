@@ -53,6 +53,11 @@ func (dm *Manager) InitDatabaseManager() error {
     return nil
 }
 
+func (dm *Manager) GetDefaultDB() *gorm.DB {
+    defaultDB := dm.dbs[DefaultDBName]
+    return defaultDB
+}
+
 func (dm *Manager) GetDB(name string) (*gorm.DB, error) {
     dm.mu.RLock()
     db, exists := dm.dbs[name]

@@ -1,12 +1,16 @@
 package models
 
-import (
-    "time"
-)
+import "time"
+
+type BaseJumpServer struct {
+    ID        uint      `json:"id" gorm:"primaryKey"`
+    Name      string    `json:"name" gorm:"not null;size=128;uniqueIndex"`
+    CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+    UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
 
 type JumpServer struct {
-    ID        uint      `gorm:"primaryKey"`
-    Name      string    `gorm:"not null;size=128;uniqueIndex"`
-    CreatedAt time.Time `gorm:"autoCreateTime"`
-    UpdatedAt time.Time `gorm:"autoUpdateTime"`
+    BaseJumpServer
+    AccessKey string `json:"access_key" gorm:"type:varchar(36);not null"`
+    SecretKey string `json:"secret_key" gorm:"type:varchar(36);not null"`
 }

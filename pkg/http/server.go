@@ -30,8 +30,13 @@ func NewHttpServer() *HttpServer {
     conf := config.GetConf()
     r := gin.Default()
     
-    r.Use(middleware.DatabaseMiddleware())
     r.POST("register/", handleRegister)
+    r.GET("jumpservers/", getJumpServers)
+    
+    g := r.Group("middleman/")
+    g.Use(middleware.AccessKeyMiddleware())
+    g.Use(middleware.DatabaseMiddleware())
+    g.POST("resources/", handleResources)
     
     return &HttpServer{
         server: &http.Server{
