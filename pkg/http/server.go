@@ -36,7 +36,8 @@ func NewHttpServer() *HttpServer {
     g := r.Group("middleman/")
     g.Use(middleware.AccessKeyMiddleware())
     g.Use(middleware.DatabaseMiddleware())
-    g.POST("resources/", handleResources)
+    g.GET("resources/", getResources)
+    g.POST("resources/", saveResources)
     
     return &HttpServer{
         server: &http.Server{

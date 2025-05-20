@@ -24,7 +24,7 @@ type Manager struct {
     mu  sync.RWMutex
 }
 
-func NewDatabaseManager() *Manager {
+func newDatabaseManager() *Manager {
     conf := config.GetConf()
     dsn := fmt.Sprintf(
         "host=%s port=%v user=%s password=%s sslmode=disable",
@@ -33,13 +33,13 @@ func NewDatabaseManager() *Manager {
     dm := &Manager{
         dbs: make(map[string]*gorm.DB), dsn: dsn,
     }
-    if err := dm.InitDatabaseManager(); err != nil {
+    if err := dm.initDatabaseManager(); err != nil {
         log.Fatalf("init database manager failed: %v", err)
     }
     return dm
 }
 
-func (dm *Manager) InitDatabaseManager() error {
+func (dm *Manager) initDatabaseManager() error {
     if err := dm.createDatabase(DefaultDBName); err != nil {
         return err
     }
@@ -80,7 +80,12 @@ func (dm *Manager) GetDB(name string) (*gorm.DB, error) {
     }
     
     db, err = dm.connectDB(name, func(db *gorm.DB) error {
-        return db.AutoMigrate()
+        return db.AutoMigrate(
+            &models.User{}, &models.Asset{}, &models.Organization{},
+            &models.Permission{}, &models.Host{}, &models.Device{},
+            &models.Database{}, &models.Cloud{}, &models.Web{},
+            &models.GPT{}, &models.Custom{},
+        )
     })
     if err != nil {
         return nil, fmt.Errorf("failed to connect to new database %s: %v", name, err)
@@ -147,4 +152,4 @@ func (dm *Manager) connectDB(dbName string, callbacks ...DBConnectCallback) (*go
     return db, nil
 }
 
-var DBManager = NewDatabaseManager()
+var DBManager = newDatabaseManager()

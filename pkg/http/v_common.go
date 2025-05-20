@@ -7,11 +7,25 @@ import (
     "middleman/pkg/database"
     "middleman/pkg/utils"
     "net/http"
+    "reflect"
+    "strconv"
     "strings"
     
     "middleman/pkg/database/models"
     
     "github.com/gin-gonic/gin"
+)
+
+const (
+    User     = "user"
+    Perm     = "Permission"
+    Host     = "host"
+    Device   = "device"
+    Database = "database"
+    Cloud    = "cloud"
+    Web      = "web"
+    Gpt      = "gpt"
+    Custom   = "custom"
 )
 
 type RegisterRequest struct {
@@ -57,12 +71,70 @@ type ResourceRequest struct {
     Type string `json:"type" binding:"required"`
 }
 
-func handleResources(c *gin.Context) {
+func getResources(c *gin.Context) {
     db := c.MustGet(consts.DbContextKey).(*gorm.DB)
+    orgID := c.MustGet(consts.OrgContextKey).(string)
     if db == nil {
         c.JSON(http.StatusPreconditionFailed, gin.H{
             "error": "Database not found", "details": "Database not found",
         })
+        return
+    }
+    
+    offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
+    if err != nil || offset < 0 {
+        offset = 0
+    }
+    
+    limit, err := strconv.Atoi(c.DefaultQuery("limit", "15"))
+    if err != nil || limit < 1 || limit > 100 {
+        limit = 15
+    }
+    
+    type_ := c.Query("type")
+    
+    resourceMap := map[string]interface{}{
+        "user":     &[]models.User{},
+        "perm":     &[]models.Permission{},
+        "host":     &[]models.Host{},
+        "device":   &[]models.Device{},
+        "database": &[]models.Database{},
+        "cloud":    &[]models.Cloud{},
+        "web":      &[]models.Web{},
+        "gpt":      &[]models.GPT{},
+        "custom":   &[]models.Custom{},
+    }
+    
+    resources, exists := resourceMap[type_]
+    if !exists {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid type", "details": type_})
+        return
+    }
+    
+    modelType := reflect.TypeOf(resources).Elem().Elem()
+    modelValue := reflect.New(modelType).Interface()
+    
+    var total int64
+    query := db.Model(modelValue).Where("org_id = ?", orgID)
+    result := query.Count(&total).Limit(limit).Offset(offset).Find(resources)
+    
+    if result.Error != nil {
+        c.JSON(http.StatusPreconditionFailed, gin.H{
+            "error": "Database error", "details": result.Error.Error(),
+        })
+        return
+    }
+    
+    c.JSON(http.StatusOK, gin.H{"data": resources, "total": total})
+}
+
+func saveResources(c *gin.Context) {
+    db := c.MustGet(consts.DbContextKey).(*gorm.DB)
+    if db == nil {
+        c.JSON(http.StatusInternalServerError, gin.H{
+            "error": "Database not found", "details": "Database not found",
+        })
+        return
     }
     var req ResourceRequest
     if err := c.ShouldBindJSON(&req); err != nil {
@@ -74,23 +146,23 @@ func handleResources(c *gin.Context) {
     
     var instance interface{}
     switch req.Type {
-    case "user":
+    case User:
         instance = handleUser(c)
-    case "permission":
+    case Perm:
         instance = handlePermission(c)
-    case "host":
+    case Host:
         instance = handleHost(c)
-    case "device":
+    case Device:
         instance = handleDevice(c)
-    case "database":
+    case Database:
         instance = handleDatabase(c)
-    case "cloud":
+    case Cloud:
         instance = handleCloud(c)
-    case "web":
+    case Web:
         instance = handleWeb(c)
-    case "gpt":
+    case Gpt:
         instance = handleGPT(c)
-    case "custom":
+    case Custom:
         instance = handleCustom(c)
     default:
         c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request type", "details": req.Type})
