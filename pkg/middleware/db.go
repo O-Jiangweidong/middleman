@@ -16,7 +16,7 @@ func DatabaseMiddleware() gin.HandlerFunc {
         if name == "" {
             name = database.DefaultDBName
         }
-        db, err := database.DBManager.GetDB(name)
+        db, err := database.GetDBManager().GetDB(name)
         if err != nil {
             c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
                 "error": fmt.Sprintf("Failed to get database name: %v", err),

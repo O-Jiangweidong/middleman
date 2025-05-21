@@ -3,7 +3,6 @@ package pkg
 import (
     "context"
     "errors"
-    "flag"
     "fmt"
     "log"
     "middleman/pkg/config"
@@ -31,10 +30,11 @@ func NewHttpServer() *HttpServer {
     r := gin.Default()
     
     r.POST("register/", handleRegister)
-    r.GET("jumpservers/", getJumpServers)
     
     g := r.Group("middleman/")
     g.Use(middleware.AccessKeyMiddleware())
+    g.GET("slave-nodes/", getSlaveNodes)
+    
     g.Use(middleware.DatabaseMiddleware())
     g.GET("resources/", getResources)
     g.POST("resources/", saveResources)
@@ -61,11 +61,7 @@ func (s *HttpServer) Stop() {
 }
 
 func RunForever() {
-    flag.StringVar(&configPath, "f", "config.yml", "config.yml path")
-    config.Setup(configPath)
-    
     httpServer := NewHttpServer()
-    
     go func() {
         if err := httpServer.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
             log.Fatalf("HTTP服务器启动失败: %v", err)

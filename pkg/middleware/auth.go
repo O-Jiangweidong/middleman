@@ -41,7 +41,7 @@ func AccessKeyMiddleware() gin.HandlerFunc {
         }
         
         var count int64
-        db := database.DBManager.GetDefaultDB()
+        db := database.GetDBManager().GetDefaultDB()
         err := db.Model(&models.JumpServer{}).
             Where("access_key = ? AND secret_key = ?", credentials[0], credentials[1]).
             Count(&count).Error

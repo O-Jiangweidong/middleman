@@ -2,18 +2,18 @@ package pkg
 
 import (
     "fmt"
-    "gorm.io/gorm"
-    "middleman/pkg/consts"
-    "middleman/pkg/database"
-    "middleman/pkg/utils"
     "net/http"
     "reflect"
     "strconv"
-    "strings"
     
+    "middleman/pkg/config"
+    "middleman/pkg/consts"
+    "middleman/pkg/database"
     "middleman/pkg/database/models"
+    "middleman/pkg/utils"
     
     "github.com/gin-gonic/gin"
+    "gorm.io/gorm"
 )
 
 const (
@@ -29,42 +29,83 @@ const (
 )
 
 type RegisterRequest struct {
-    Name string `json:"name"`
+    Name           models.NameType `json:"name" binding:"required"`
+    Display        string          `json:"display" binding:"required"`
+    BootstrapToken string          `json:"bootstrap_token" binding:"required"`
+    Role           models.RoleType `json:"role" binding:"required"`
+    IgnoreSameName bool            `json:"ignore_same_name"`
 }
 
 func handleRegister(c *gin.Context) {
+    conf := config.GetConf()
     var registerRequest RegisterRequest
     if err := c.ShouldBindJSON(&registerRequest); err != nil {
         c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
         return
     }
-    db := database.DBManager.GetDefaultDB()
+    if conf.BootstrapToken != registerRequest.BootstrapToken {
+        c.JSON(http.StatusForbidden, gin.H{"error": "BootstrapToken does not match"})
+        return
+    }
+    db := database.GetDBManager().GetDefaultDB()
     server := models.JumpServer{
         BaseJumpServer: models.BaseJumpServer{
-            Name: registerRequest.Name,
+            Name:    registerRequest.Name,
+            Display: registerRequest.Display,
+            Role:    registerRequest.Role,
         },
         AccessKey: utils.GenerateRandomString(36),
         SecretKey: utils.GenerateRandomString(36),
     }
-    result := db.Create(&server)
-    if result.Error != nil {
-        var msg string
-        if strings.Contains(result.Error.Error(), "unique constraint") {
-            msg = "存在相同名称的堡垒机，请修改配置文件中的堡垒机名称，并重启重新注册"
-        } else {
-            msg = fmt.Sprintf("创建用户失败: %v", result.Error)
-        }
+    if err := server.Validate(); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+    
+    var count int64
+    db.Model(&models.JumpServer{}).Where("name = ?", registerRequest.Name).Count(&count)
+    if count > 0 && !registerRequest.IgnoreSameName {
+        msg := fmt.Sprintf(
+            "Name: %s 重复，请修改配置文件 MIDDLEMAN_SERVICE_NAME，并重启重新注册",
+            server.Name,
+        )
         c.JSON(http.StatusBadRequest, gin.H{"error": msg})
         return
+    }
+    if count == 0 {
+        result := db.Create(&server)
+        if result.Error != nil {
+            c.JSON(http.StatusBadRequest, gin.H{
+                "error": fmt.Sprintf("创建节点失败: %v", result.Error),
+            })
+            return
+        }
+        
+        if server.Role == models.RoleSlave {
+            newDB, err := database.GetDBManager().GetDB(string(server.Name))
+            if err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+            }
+            organizations := []models.Organization{
+                models.DefaultOrg, models.SystemOrg,
+            }
+            _ = newDB.Create(&organizations)
+        }
     }
     c.JSON(http.StatusOK, gin.H{"data": server})
 }
 
-func getJumpServers(c *gin.Context) {
-    db := database.DBManager.GetDefaultDB()
-    var servers []models.BaseJumpServer
-    db.Find(&servers)
-    c.JSON(http.StatusOK, gin.H{"data": servers})
+func getSlaveNodes(c *gin.Context) {
+    db := database.GetDBManager().GetDefaultDB()
+    var services []models.JumpServer
+    db.Where("role = ?", models.RoleSlave).Find(&services)
+    
+    var baseServices []models.BaseJumpServer
+    for _, s := range services {
+        baseServices = append(baseServices, s.BaseJumpServer)
+    }
+    c.JSON(http.StatusOK, gin.H{"data": baseServices})
 }
 
 type ResourceRequest struct {

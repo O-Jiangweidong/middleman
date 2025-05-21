@@ -8,18 +8,28 @@ import (
 )
 
 type Config struct {
-    Port   string `mapstructure:"PORT"`
-    DBHost string `mapstructure:"DB_HOST"`
-    DBPort string `mapstructure:"DB_PORT"`
-    DBUser string `mapstructure:"DB_USER"`
-    DBPwd  string `mapstructure:"DB_PWD"`
+    BootstrapToken string `mapstructure:"BOOTSTRAP_TOKEN"`
+    Port           string `mapstructure:"PORT"`
+    DBHost         string `mapstructure:"DB_HOST"`
+    DBPort         string `mapstructure:"DB_PORT"`
+    DBUser         string `mapstructure:"DB_USER"`
+    DBPwd          string `mapstructure:"DB_PWD"`
 }
 
 var GlobalConfig *Config
 
+func init() {
+    Setup("config.yml")
+}
+
 func getDefaultConfig() Config {
     return Config{
-        Port: "8080",
+        Port:           "9988",
+        BootstrapToken: "",
+        DBHost:         "localhost",
+        DBPort:         "5432",
+        DBUser:         "postgres",
+        DBPwd:          "postgres",
     }
 }
 
