@@ -26,7 +26,7 @@ type CacheManager struct {
 	mu sync.RWMutex
 }
 
-func NewCacheManager(dataDir string) (*CacheManager, error) {
+func newCacheManager(dataDir string) (*CacheManager, error) {
 	instanceOnce.Do(func() {
 		opts := badger.DefaultOptions(dataDir).
 			WithInMemory(false).
@@ -137,7 +137,7 @@ func (c *CacheManager) Close() error {
 }
 
 func GetCache() *CacheManager {
-	cache, err := NewCacheManager("data")
+	cache, err := newCacheManager("data")
 	if err != nil {
 		log.Fatal("Init cache component failed.")
 	}
