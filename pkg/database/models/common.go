@@ -3,20 +3,22 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 )
 
-const utcFormat = "2006-01-02 15:04:05 -0700"
+const utcFormat = "2006-01-02 15:04:05.000000-07:00"
 
 var (
 	supportedTimeFormat = []string{
-		"2006/01/02 15:04:05 -0700",
-		utcFormat,
-		time.RFC3339,
+		utcFormat, time.RFC3339,
 	}
 )
+
+type LabelValue struct {
+	Value interface{} `json:"value"`
+	Label string      `json:"label"`
+}
 
 type JSONMap map[string]interface{}
 
@@ -48,6 +50,19 @@ func (j *JSONMap) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, j)
 }
 
+type JSONArray []interface{}
+
+func (j JSONArray) Value() (driver.Value, error) {
+	if j == nil {
+		return nil, nil
+	}
+	return json.Marshal(j)
+}
+
+func (j JSONArray) Scan(value interface{}) error {
+	return json.Unmarshal(value.([]byte), &j)
+}
+
 type UTCTime struct {
 	time.Time
 }
@@ -58,18 +73,20 @@ func (t *UTCTime) MarshalJSON() ([]byte, error) {
 
 func (t *UTCTime) UnmarshalJSON(data []byte) (err error) {
 	for _, format := range supportedTimeFormat {
-		if parseTime, err := time.Parse(fmt.Sprintf(
-			`"%s"`, format), string(data)); err == nil {
+		if parseTime, err := time.Parse(
+			fmt.Sprintf(`"%s"`, format), string(data),
+		); err == nil {
 			t.Time = parseTime
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: %s", errors.New("unsupported time format"), data)
+	t.Time = time.Now()
+	return nil
 }
 
 func (t *UTCTime) Value() (driver.Value, error) {
 	if t.IsZero() {
-		return nil, nil
+		return time.Now().Format(time.RFC3339), nil
 	}
 	return t.UTC().Format(time.RFC3339), nil
 }

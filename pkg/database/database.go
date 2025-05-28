@@ -95,8 +95,9 @@ func (dm *Manager) GetDB(name string) (*gorm.DB, error) {
 
 	db, err = dm.connectDB(name, func(db *gorm.DB) error {
 		return db.AutoMigrate(
-			&models.User{}, &models.Asset{},
-			&models.Permission{}, &models.Host{},
+			&models.User{}, &models.Permission{}, &models.Platform{},
+			&models.RbacRole{}, &models.RbacRoleBinding{},
+			&models.Asset{}, &models.Host{},
 			&models.Device{}, &models.Database{}, &models.Cloud{},
 			&models.Web{}, &models.GPT{}, &models.Custom{},
 		)

@@ -2,43 +2,33 @@ package pkg
 
 import (
 	"encoding/json"
-	"fmt"
-	"reflect"
-
 	"gorm.io/gorm"
+
+	"middleman/pkg/database/models"
 )
 
-func saveToDB(db *gorm.DB, instance interface{}, dataItems []interface{}) error {
-	instanceType := reflect.TypeOf(instance)
+func (h *ResourcesHandler) savePlatform(db *gorm.DB, dataItems []interface{}) error {
 	for _, dataItem := range dataItems {
-		newInstance := reflect.New(instanceType).Interface()
 		dataJSON, err := json.Marshal(dataItem)
 		if err != nil {
 			return err
 		}
 
-		if err = json.Unmarshal(dataJSON, newInstance); err != nil {
+		var platform models.Platform
+		if err = json.Unmarshal(dataJSON, &platform); err != nil {
 			return err
-		}
-
-		idField := reflect.ValueOf(newInstance).Elem().FieldByName("ID")
-		if !idField.IsValid() {
-			return fmt.Errorf("模型 %v 缺少ID字段", instanceType.Name())
 		}
 
 		var count int64
-		query := db.Model(newInstance)
-		if err = query.Where("id = ?", idField.Interface()).
-			Count(&count).Error; err != nil {
+		if err = db.Model(platform).Where("id = ?", platform.ID).Count(&count).Error; err != nil {
 			return err
 		}
-
 		if count > 0 {
-			if err = db.Model(newInstance).Updates(newInstance).Error; err != nil {
+			if err = db.Model(platform).Updates(&platform).Error; err != nil {
 				return err
 			}
 		} else {
-			if err = db.Create(newInstance).Error; err != nil {
+			if err = db.Create(&platform).Error; err != nil {
 				return err
 			}
 		}

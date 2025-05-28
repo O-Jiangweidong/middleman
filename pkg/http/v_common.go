@@ -3,8 +3,8 @@ package pkg
 import (
 	"fmt"
 	"net/http"
-	"reflect"
 	"strconv"
+	"strings"
 
 	"middleman/pkg/config"
 	"middleman/pkg/consts"
@@ -18,6 +18,8 @@ import (
 
 const (
 	User         = "user"
+	Asset        = "asset"
+	Platform     = "platform"
 	Perm         = "Permission"
 	Host         = "host"
 	Device       = "device"
@@ -27,6 +29,8 @@ const (
 	Gpt          = "gpt"
 	Custom       = "custom"
 	Organization = "organization"
+	Role         = "role"
+	UserGroup    = "user_group"
 )
 
 type RegisterRequest struct {
@@ -35,6 +39,8 @@ type RegisterRequest struct {
 	BootstrapToken string          `json:"bootstrap_token" binding:"required"`
 	Role           models.RoleType `json:"role" binding:"required"`
 	IgnoreSameName bool            `json:"ignore_same_name"`
+	Endpoint       string          `json:"endpoint" binding:"required"`
+	PrivateToken   string          `json:"private_token" binding:"required"`
 }
 
 func handleRegister(c *gin.Context) {
@@ -51,12 +57,14 @@ func handleRegister(c *gin.Context) {
 	db := database.GetDBManager().GetDefaultDB()
 	server := models.JumpServer{
 		BaseJumpServer: models.BaseJumpServer{
-			Name:    registerRequest.Name,
-			Display: registerRequest.Display,
-			Role:    registerRequest.Role,
+			Name:     registerRequest.Name,
+			Display:  registerRequest.Display,
+			Role:     registerRequest.Role,
+			Endpoint: registerRequest.Endpoint,
 		},
-		AccessKey: utils.GenerateRandomString(36),
-		SecretKey: utils.GenerateRandomString(36),
+		AccessKey:    utils.GenerateRandomString(36),
+		SecretKey:    utils.GenerateRandomString(36),
+		PrivateToken: registerRequest.PrivateToken,
 	}
 	if err := server.Validate(); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -113,21 +121,51 @@ func getSlaveNodes(c *gin.Context) {
 	for _, s := range services {
 		baseServices = append(baseServices, s.BaseJumpServer)
 	}
-	c.JSON(http.StatusOK, gin.H{"data": baseServices})
+	c.JSON(http.StatusOK, gin.H{"data": baseServices, "total": len(baseServices)})
 }
 
-type ResourceRequest struct {
-	Type string        `json:"type" binding:"required"`
-	Data []interface{} `json:"data" binding:"required"`
+func getAllowedFields(resourceType string) map[string]bool {
+	switch resourceType {
+	case User:
+		return map[string]bool{
+			"id":       true,
+			"username": true,
+			"email":    true,
+		}
+	case Role:
+		return map[string]bool{
+			"id":      true,
+			"name":    true,
+			"scope":   true,
+			"builtin": true,
+		}
+	default:
+		return make(map[string]bool)
+	}
+}
+
+func getSearchFields(resourceType string) []string {
+	switch resourceType {
+	case User:
+		return []string{"username", "name", "email"}
+	default:
+		return []string{}
+	}
 }
 
 func getResources(c *gin.Context) {
 	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
+	dbName := c.MustGet(consts.DBInfoContextKey).(models.JumpServer).Name
+	fmt.Println("DB Name:", dbName)
 	if db == nil {
 		c.JSON(http.StatusPreconditionFailed, gin.H{
 			"error": "Database not found", "details": "Database not found",
 		})
 		return
+	}
+
+	processedParams := map[string]bool{
+		"offset": true, "limit": true, "type": true, "search": true,
 	}
 
 	offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
@@ -141,17 +179,19 @@ func getResources(c *gin.Context) {
 	}
 
 	type_ := c.Query("type")
-
 	resourceMap := map[string]interface{}{
-		"user":     &[]models.User{},
-		"perm":     &[]models.Permission{},
-		"host":     &[]models.Host{},
-		"device":   &[]models.Device{},
-		"database": &[]models.Database{},
-		"cloud":    &[]models.Cloud{},
-		"web":      &[]models.Web{},
-		"gpt":      &[]models.GPT{},
-		"custom":   &[]models.Custom{},
+		User:     &[]models.User{},
+		Asset:    &[]models.Asset{},
+		Platform: &[]models.Platform{},
+		Perm:     &[]models.Permission{},
+		Host:     &[]models.Host{},
+		Device:   &[]models.Device{},
+		Database: &[]models.Database{},
+		Cloud:    &[]models.Cloud{},
+		Web:      &[]models.Web{},
+		Gpt:      &[]models.GPT{},
+		Custom:   &[]models.Custom{},
+		Role:     &[]models.RbacRole{},
 	}
 
 	resources, exists := resourceMap[type_]
@@ -160,13 +200,35 @@ func getResources(c *gin.Context) {
 		return
 	}
 
-	modelType := reflect.TypeOf(resources).Elem().Elem()
-	modelValue := reflect.New(modelType).Interface()
+	allowedFields := getAllowedFields(type_)
+
+	q := db.Model(resources)
+	for key, values := range c.Request.URL.Query() {
+		if processedParams[key] || !allowedFields[key] {
+			continue
+		}
+
+		if len(values) > 0 {
+			q = q.Where(fmt.Sprintf("%s = ?", key), values[len(values)-1])
+		}
+	}
+
+	search := c.Query("search")
+	searchFields := getSearchFields(type_)
+
+	if search != "" && len(searchFields) > 0 {
+		var conditions []string
+		var args []interface{}
+		for _, f := range searchFields {
+			args = append(args, search)
+			conditions = append(conditions, fmt.Sprintf("%s = ?", f))
+		}
+
+		q = q.Where("("+strings.Join(conditions, " OR ")+")", args...)
+	}
 
 	var count int64
-	result := db.Model(modelValue).
-		Count(&count).Limit(limit).Offset(offset).Find(resources)
-
+	result := q.Count(&count).Limit(limit).Offset(offset).Find(resources)
 	if result.Error != nil {
 		c.JSON(http.StatusPreconditionFailed, gin.H{
 			"error": "Database error", "details": result.Error.Error(),
@@ -174,62 +236,47 @@ func getResources(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": resources, "count": count})
+	c.JSON(http.StatusOK, gin.H{"results": resources, "count": count})
+}
+
+type ResourcesHandler struct {
+	jmsClient *utils.JumpServer
+}
+
+func newResourcesHandler(dbInfo models.JumpServer) *ResourcesHandler {
+	return &ResourcesHandler{
+		jmsClient: utils.NewJumpServer(dbInfo.Endpoint, dbInfo.PrivateToken),
+	}
 }
 
 func saveResources(c *gin.Context) {
 	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
-	dbName := c.MustGet(consts.DBNameContextKey).(string)
-	cache := utils.GetCache()
+	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
 
-	if db == nil || dbName == "" {
+	handler := newResourcesHandler(dbInfo)
+
+	if db == nil || dbInfo.Name == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Database not found", "details": "Database not found",
 		})
 		return
 	}
-	var req ResourceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request format", "details": err.Error(),
-		})
-		return
-	}
+
+	resourceType := c.Query("type")
 
 	var err error
-	var instance interface{}
-	switch req.Type {
+	switch resourceType {
 	case User:
-		instance = models.User{}
-		err = saveToDB(db, instance, req.Data)
-	case Perm:
-		instance = models.Permission{}
-		err = saveToDB(db, &instance, req.Data)
-	case Host:
-		instance = models.Host{}
-		err = saveToDB(db, &instance, req.Data)
-	case Device:
-		instance = models.Device{}
-		err = saveToDB(db, &instance, req.Data)
-	case Database:
-		instance = models.Database{}
-		err = saveToDB(db, &instance, req.Data)
-	case Cloud:
-		instance = models.Cloud{}
-		err = saveToDB(db, &instance, req.Data)
-	case Web:
-		instance = models.Web{}
-		err = saveToDB(db, &instance, req.Data)
-	case Gpt:
-		instance = models.GPT{}
-		err = saveToDB(db, instance, req.Data)
-	case Custom:
-		instance = models.Custom{}
-		err = saveToDB(db, instance, req.Data)
-	case Organization:
-		err = saveOrgToCache(c, cache, dbName)
+		err = handler.saveUser(c, db)
+	case Role:
+		err = handler.saveRole(c, db)
+	case UserGroup:
+		err = handler.saveUserGroup(c, db)
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request type", "details": req.Type})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request type",
+			"details": fmt.Sprintf("Invalid request type: %s", resourceType),
+		})
 		return
 	}
 
@@ -241,7 +288,6 @@ func saveResources(c *gin.Context) {
 	} else {
 		c.JSON(http.StatusCreated, gin.H{
 			"message": "Permission created successfully",
-			"data":    instance,
 		})
 	}
 }

@@ -33,6 +33,18 @@ func DatabaseMiddleware() gin.HandlerFunc {
 		if dbName == "" {
 			dbName = database.DefaultDBName
 		}
+		if dbName != database.DefaultDBName {
+			var count int64
+			defaultDB.Model(&models.JumpServer{}).
+				Where("name = ?", dbName).Count(&count)
+			if count < 1 {
+				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("Invalid branch node name"),
+					"code":  40002,
+				})
+				return
+			}
+		}
 		db, err := database.GetDBManager().GetDB(dbName)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
@@ -43,7 +55,7 @@ func DatabaseMiddleware() gin.HandlerFunc {
 		}
 
 		c.Set(consts.DBContextKey, db)
-		c.Set(consts.DBNameContextKey, dbName)
+		c.Set(consts.DBInfoContextKey, server)
 		c.Next()
 	}
 }

@@ -2,6 +2,6 @@ package consts
 
 const (
 	DBContextKey     = "database"
-	DBNameContextKey = "database_name"
+	DBInfoContextKey = "database_info"
 	OrgContextKey    = "org_id"
 )
