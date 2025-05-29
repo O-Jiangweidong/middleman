@@ -109,8 +109,6 @@ func (h *ResourcesHandler) getAssets(c *gin.Context, db *gorm.DB, limit, offset 
 		"id":        true,
 		"address":   true,
 		"name":      true,
-		"category":  true,
-		"type":      true,
 		"is_active": true,
 	}
 	q := db.Model(&models.Asset{}).Preload("Platform")
