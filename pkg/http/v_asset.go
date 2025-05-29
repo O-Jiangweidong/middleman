@@ -113,7 +113,7 @@ func (h *ResourcesHandler) getAssets(c *gin.Context, db *gorm.DB, limit, offset 
 		"type":      true,
 		"is_active": true,
 	}
-	q := db.Model(&models.Asset{})
+	q := db.Model(&models.Asset{}).Preload("Platform")
 	for key, values := range c.Request.URL.Query() {
 		if h.processedParams[key] || !queryFields[key] {
 			continue
@@ -131,5 +131,44 @@ func (h *ResourcesHandler) getAssets(c *gin.Context, db *gorm.DB, limit, offset 
 	if err = q.Count(&count).Limit(limit).Offset(offset).Find(&assets).Error; err != nil {
 		return nil, 0, err
 	}
-	return assets, count, nil
+
+	var newAssets []models.Asset
+	for _, asset := range assets {
+		p := asset.Platform
+		asset.Category = models.LabelValue{Label: p.Category, Value: p.Category}
+		asset.Type = models.LabelValue{Label: p.Type, Value: p.Type}
+		asset.Accounts = nil
+		newAssets = append(newAssets, asset)
+	}
+	return newAssets, count, nil
+}
+
+func (h *ResourcesHandler) getAccounts(c *gin.Context, db *gorm.DB, limit, offset int) (interface{}, int64, error) {
+	var err error
+	var accounts []models.Account
+	queryFields := map[string]bool{
+		"id":          true,
+		"name":        true,
+		"username":    true,
+		"secret_type": true,
+	}
+	q := db.Model(&models.Account{}).Preload("Asset")
+	for key, values := range c.Request.URL.Query() {
+		if h.processedParams[key] || !queryFields[key] {
+			continue
+		}
+
+		if len(values) > 0 {
+			q = q.Where(fmt.Sprintf("%s = ?", key), values[len(values)-1])
+		}
+	}
+
+	searchFields := []string{"username", "name"}
+	q = h.handleSearch(c, q, searchFields)
+
+	var count int64
+	if err = q.Count(&count).Limit(limit).Offset(offset).Find(&accounts).Error; err != nil {
+		return nil, 0, err
+	}
+	return accounts, count, nil
 }

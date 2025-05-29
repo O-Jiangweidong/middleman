@@ -39,11 +39,11 @@ type Protocol struct {
 
 type ProtocolList []Protocol
 
-func (p ProtocolList) Value() (driver.Value, error) {
+func (p *ProtocolList) Value() (driver.Value, error) {
 	return json.Marshal(p)
 }
 
-func (p ProtocolList) Scan(value interface{}) error {
+func (p *ProtocolList) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
@@ -90,6 +90,9 @@ type Asset struct {
 	Cloud    *Cloud    `json:"-" gorm:"foreignKey:AssetPtrID"`
 	GPT      *GPT      `json:"-" gorm:"foreignKey:AssetPtrID"`
 	Custom   *Custom   `json:"-" gorm:"foreignKey:AssetPtrID"`
+
+	Category LabelValue `json:"category,omitempty" gorm:"-"`
+	Type     LabelValue `json:"type,omitempty" gorm:"-"`
 }
 
 type JmsAsset struct {

@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"middleman/pkg/database/models"
 	"net/http"
+
+	"middleman/pkg/database/models"
 )
 
 type JumpServer struct {

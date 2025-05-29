@@ -19,6 +19,7 @@ import (
 const (
 	User         = "user"
 	Asset        = "asset"
+	Account      = "account"
 	Platform     = "platform"
 	Perm         = "Permission"
 	Host         = "host"
@@ -162,6 +163,10 @@ func getResources(c *gin.Context) {
 		resources, count, err = handle.getUsers(c, db, limit, offset)
 	case Platform:
 		resources, count, err = handle.getPlatforms(c, db, limit, offset)
+	case Asset:
+		resources, count, err = handle.getAssets(c, db, limit, offset)
+	case Account:
+		resources, count, err = handle.getAccounts(c, db, limit, offset)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",

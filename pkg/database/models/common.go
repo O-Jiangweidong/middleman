@@ -84,13 +84,12 @@ func (t *UTCTime) UnmarshalJSON(data []byte) (err error) {
 			return nil
 		}
 	}
-	t.Time = time.Now()
 	return nil
 }
 
 func (t *UTCTime) Value() (driver.Value, error) {
 	if t.IsZero() {
-		return time.Now().Format(time.RFC3339), nil
+		t.Time = time.Now()
 	}
 	return t.UTC().Format(time.RFC3339), nil
 }

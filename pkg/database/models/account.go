@@ -24,5 +24,5 @@ type Account struct {
 	PushNow bool   `json:"push_now" gorm:"-"`
 	Secret  string `json:"secret,omitempty" gorm:"-"`
 
-	Asset Asset `json:"-" gorm:"foreignKey:AssetID;references:ID"`
+	Asset Asset `json:"asset,omitempty" gorm:"foreignKey:AssetID;references:ID"`
 }
