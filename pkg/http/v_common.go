@@ -215,6 +215,7 @@ func newResourcesHandler(dbInfo models.JumpServer) *ResourcesHandler {
 func saveResources(c *gin.Context) {
 	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
 	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
+	cache := utils.GetCache()
 
 	handler := newResourcesHandler(dbInfo)
 
@@ -228,17 +229,18 @@ func saveResources(c *gin.Context) {
 	resourceType := c.Query("type")
 
 	var err error
+	var ids []string
 	switch resourceType {
 	case User:
-		err = handler.saveUser(c, db)
+		ids, err = handler.saveUser(c, db)
 	case Role:
 		err = handler.saveRole(c, db)
 	case UserGroup:
-		err = handler.saveUserGroup(c, db)
+		ids, err = handler.saveUserGroup(c, db)
 	case Platform:
 		err = handler.savePlatform(c, db)
 	case Host:
-		err = handler.saveHost(c, db)
+		ids, err = handler.saveHost(c, db)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",
@@ -252,9 +254,13 @@ func saveResources(c *gin.Context) {
 			"error":   fmt.Sprintf("Failed to save resource: %v", err.Error()),
 			"details": "Database operation failed",
 		})
-	} else {
-		c.JSON(http.StatusCreated, gin.H{
-			"message": "Permission created successfully",
-		})
 	}
+
+	for _, id := range ids {
+		_ = cache.Set(fmt.Sprintf("%s-%s", resourceType, id), true, 0)
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Permission created successfully",
+	})
 }

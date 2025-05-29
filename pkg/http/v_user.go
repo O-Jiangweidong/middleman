@@ -1,18 +1,18 @@
 package pkg
 
 import (
-    "fmt"
-    "github.com/gin-gonic/gin"
-    "github.com/google/uuid"
-    "gorm.io/gorm"
-    
-    "middleman/pkg/database/models"
+	"fmt"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"middleman/pkg/database/models"
 )
 
-func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (err error) {
+func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (ids []string, err error) {
 	var users []models.User
 	if err = c.ShouldBindJSON(&users); err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, user := range users {
@@ -49,11 +49,11 @@ func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (err error) {
 
 		var count int64
 		if err = db.Model(user).Where("id = ?", user.ID).Count(&count).Error; err != nil {
-			return err
+			return nil, err
 		}
 		if count > 0 {
 			if err = db.Model(user).Updates(&user).Error; err != nil {
-				return err
+				return nil, err
 			}
 		} else {
 			err = db.Transaction(func(tx *gorm.DB) error {
@@ -68,16 +68,16 @@ func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (err error) {
 				return nil
 			})
 			if err != nil {
-				return err
+				return nil, err
 			}
 
-			err = h.jmsClient.CreateUser(jmsUser)
-			if err != nil {
-				return err
+			if err = h.jmsClient.CreateUser(jmsUser); err != nil {
+				return nil, err
 			}
+			ids = append(ids, user.ID)
 		}
 	}
-	return nil
+	return ids, nil
 }
 
 func (h *ResourcesHandler) saveRole(c *gin.Context, db *gorm.DB) (err error) {
@@ -103,28 +103,29 @@ func (h *ResourcesHandler) saveRole(c *gin.Context, db *gorm.DB) (err error) {
 	return nil
 }
 
-func (h *ResourcesHandler) saveUserGroup(c *gin.Context, db *gorm.DB) (err error) {
+func (h *ResourcesHandler) saveUserGroup(c *gin.Context, db *gorm.DB) (ids []string, err error) {
 	var userGroups []models.UserGroup
 	if err = c.ShouldBindJSON(&userGroups); err != nil {
-		return err
+		return nil, err
 	}
 	for _, group := range userGroups {
 		var count int64
 		if err = db.Model(group).Where("id = ?", group.ID).Count(&count).Error; err != nil {
-			return err
+			return nil, err
 		}
 		if count > 0 {
 			if err = db.Model(group).Updates(&group).Error; err != nil {
-				return err
+				return nil, err
 			}
 		} else {
 			if err = db.Create(&group).Error; err != nil {
-				return err
+				return nil, err
 			}
+			ids = append(ids, group.ID)
 		}
 	}
 
-	return nil
+	return ids, nil
 }
 
 func (h *ResourcesHandler) getUsers(c *gin.Context, db *gorm.DB, limit, offset int) (interface{}, int64, error) {

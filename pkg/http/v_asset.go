@@ -33,15 +33,15 @@ func (h *ResourcesHandler) savePlatform(c *gin.Context, db *gorm.DB) (err error)
 	return nil
 }
 
-func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (err error) {
+func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, err error) {
 	var hosts []models.Host
 	if err = c.ShouldBindJSON(&hosts); err != nil {
-		return err
+		return nil, err
 	}
 	for _, host := range hosts {
 		var count int64
 		if err = db.Model(host).Where("asset_ptr_id = ?", host.Asset.ID).Count(&count).Error; err != nil {
-			return err
+			return nil, err
 		}
 
 		var newAccounts []models.Account
@@ -57,20 +57,20 @@ func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (err error) {
 
 		if count > 0 {
 			if err = db.Model(host).Updates(&host).Error; err != nil {
-				return err
+				return nil, err
 			}
 		} else {
 			if err = db.Create(&host).Error; err != nil {
-				return err
+				return nil, err
 			}
-			err = h.jmsClient.CreateAsset(host)
-			if err != nil {
-				return err
+			if err = h.jmsClient.CreateAsset(host); err != nil {
+				return nil, err
 			}
+			ids = append(ids, host.AssetPtrID)
 		}
 	}
 
-	return nil
+	return ids, nil
 }
 
 func (h *ResourcesHandler) getPlatforms(c *gin.Context, db *gorm.DB, limit, offset int) (interface{}, int64, error) {
