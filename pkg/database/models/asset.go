@@ -8,13 +8,17 @@ import (
 
 type Platform struct {
 	ID          uint     `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name        string   `json:"name" gorm:"type:varchar(50);not null;unique"`
-	Type        string   `json:"type" gorm:"type:varchar(32);not null"`
-	Category    string   `json:"category" gorm:"type:varchar(32);not null"`
-	CreatedBy   string   `json:"created_by" gorm:"type:varchar(128);default:null"`
-	UpdatedBy   string   `json:"updated_by" gorm:"type:varchar(128);default:null"`
-	DateCreated *UTCTime `json:"date_created" gorm:"type:timestamp with time zone;default:null"`
-	DateUpdated *UTCTime `json:"date_updated" gorm:"type:timestamp with time zone;not null"`
+	Name        string   `json:"name,omitempty" gorm:"type:varchar(50);not null;unique"`
+	Type        string   `json:"type,omitempty" gorm:"type:varchar(32);not null"`
+	Internal    bool     `json:"internal,omitempty" gorm:"type:boolean;default:false"`
+	Comment     string   `json:"comment,omitempty" gorm:"type:text;"`
+	Category    string   `json:"category,omitempty" gorm:"type:varchar(32);not null"`
+	CreatedBy   string   `json:"created_by,omitempty" gorm:"type:varchar(128);default:null"`
+	UpdatedBy   string   `json:"updated_by,omitempty" gorm:"type:varchar(128);default:null"`
+	DateCreated *UTCTime `json:"date_created,omitempty" gorm:"type:timestamp with time zone;default:null"`
+	DateUpdated *UTCTime `json:"date_updated,omitempty" gorm:"type:timestamp with time zone;default:null"`
+
+	Assets []Asset `json:"-" gorm:"foreignKey:PlatformID"`
 }
 
 type PlatformProtocol struct {
@@ -61,35 +65,52 @@ type SimpleAsset struct {
 }
 
 type Asset struct {
-	ID           string       `json:"id" gorm:"type:char(36);primaryKey;not null"`
+	ID           string       `json:"id" gorm:"type:uuid;primaryKey;not null"`
 	Address      string       `json:"address" gorm:"type:varchar(767);not null"`
 	Name         string       `json:"name" gorm:"type:varchar(128);not null"`
 	IsActive     bool         `json:"is_active" gorm:"type:boolean;not null"`
 	CreatedBy    string       `json:"created_by,omitempty" gorm:"type:varchar(128)"`
-	DateCreated  *UTCTime     `json:"date_created,omitempty" gorm:"type:timestamp with time zone;default:null"`
-	Comment      string       `json:"comment" gorm:"type:text;not null"`
-	OrgID        string       `json:"org_id" gorm:"type:varchar(36);not null;index"`
-	PlatformID   int          `json:"platform_id" gorm:"type:integer;not null"`
+	UpdatedBy    string       `json:"updated_by,omitempty" gorm:"type:varchar(128)"`
+	Comment      string       `json:"comment" gorm:"type:text"`
+	OrgID        string       `json:"org_id,omitempty" gorm:"type:uuid;not null;index"`
+	PlatformID   uint         `json:"platform_id,omitempty" gorm:"type:integer;not null"`
 	Connectivity string       `json:"connectivity" gorm:"type:varchar(16);not null"`
+	DateCreated  *UTCTime     `json:"date_created,omitempty" gorm:"type:timestamp with time zone;default:null"`
 	DateVerified *UTCTime     `json:"date_verified,omitempty" gorm:"type:timestamp with time zone;default:null"`
 	DateUpdated  *UTCTime     `json:"date_updated" gorm:"type:timestamp with time zone;default:null"`
-	UpdatedBy    string       `json:"updated_by,omitempty" gorm:"type:varchar(128)"`
 	Protocols    ProtocolList `json:"protocols" gorm:"type:jsonb;not null"`
 
-	Platform string    `json:"platform"`
-	Accounts []Account `json:"accounts"`
+	Platform Platform  `json:"platform" gorm:"foreignKey:PlatformID;references:ID"`
+	Accounts []Account `json:"accounts" gorm:"foreignKey:AssetID;constraint:OnDelete:CASCADE"`
 
-	Host     *Host     `gorm:"foreignKey:AssetPtrID"`
-	Web      *Web      `gorm:"foreignKey:AssetPtrID"`
-	Device   *Device   `gorm:"foreignKey:AssetPtrID"`
-	Database *Database `gorm:"foreignKey:AssetPtrID"`
-	Cloud    *Cloud    `gorm:"foreignKey:AssetPtrID"`
-	GPT      *GPT      `gorm:"foreignKey:AssetPtrID"`
-	Custom   *Custom   `gorm:"foreignKey:AssetPtrID"`
+	Host     *Host     `json:"-" gorm:"foreignKey:AssetPtrID"`
+	Web      *Web      `json:"-" gorm:"foreignKey:AssetPtrID"`
+	Device   *Device   `json:"-" gorm:"foreignKey:AssetPtrID"`
+	Database *Database `json:"-" gorm:"foreignKey:AssetPtrID"`
+	Cloud    *Cloud    `json:"-" gorm:"foreignKey:AssetPtrID"`
+	GPT      *GPT      `json:"-" gorm:"foreignKey:AssetPtrID"`
+	Custom   *Custom   `json:"-" gorm:"foreignKey:AssetPtrID"`
+}
+
+type JmsAsset struct {
+	Asset
+}
+
+func (a Asset) ToJmsAsset() JmsAsset {
+	a.Platform.ID = a.PlatformID
+	a.OrgID = ""
+	a.PlatformID = 0
+	var accounts []Account
+	for _, account := range a.Accounts {
+		account.AssetID = ""
+		accounts = append(accounts, account)
+	}
+	a.Accounts = accounts
+	return JmsAsset{Asset: a}
 }
 
 type Web struct {
-	AssetPtrID       string  `json:"asset_ptr_id" gorm:"primaryKey;type:char(36);not null"`
+	AssetPtrID       string  `json:"asset_ptr_id" gorm:"primaryKey;type:uuid;not null"`
 	Asset            Asset   `json:"asset" gorm:"foreignKey:AssetPtrID;references:ID"`
 	Autofill         string  `json:"autofill" gorm:"type:varchar(16);not null"`
 	PasswordSelector string  `json:"password_selector" gorm:"type:varchar(128);not null"`
@@ -99,32 +120,28 @@ type Web struct {
 }
 
 type Host struct {
-	AssetPtrID string `json:"asset_ptr_id" gorm:"primaryKey;type:char(36);not null"`
+	AssetPtrID string `json:"asset_ptr_id" gorm:"primaryKey;type:uuid;not null"`
 	Asset      Asset  `json:"asset" gorm:"foreignKey:AssetPtrID;references:ID"`
 }
 
 func (h *Host) UnmarshalJSON(data []byte) error {
-	var simpleAsset SimpleAsset
-	if err := json.Unmarshal(data, &simpleAsset); err != nil {
-		return err
-	}
-
 	var asset Asset
 	if err := json.Unmarshal(data, &asset); err != nil {
 		return err
 	}
-	h.AssetPtrID = simpleAsset.AssetPtrID
+	h.AssetPtrID = asset.ID
 	h.Asset = asset
+	h.Asset.OrgID = DefaultOrgID
 	return nil
 }
 
 type Device struct {
-	AssetPtrID string `gorm:"primaryKey;type:char(36);not null"`
+	AssetPtrID string `gorm:"primaryKey;type:uuid;not null"`
 	Asset      Asset  `gorm:"foreignKey:AssetPtrID;references:ID"`
 }
 
 type Database struct {
-	AssetPtrID       string `gorm:"primaryKey;type:char(36);not null"`
+	AssetPtrID       string `gorm:"primaryKey;type:uuid;not null"`
 	Asset            Asset  `gorm:"foreignKey:AssetPtrID;references:ID"`
 	DBName           string `json:"db_name" gorm:"type:varchar(1024);not null"`
 	AllowInvalidCert bool   `json:"allow_invalid_cert" gorm:"type:boolean;not null"`
@@ -135,17 +152,17 @@ type Database struct {
 }
 
 type Cloud struct {
-	AssetPtrID string `gorm:"primaryKey;type:char(36);not null"`
+	AssetPtrID string `gorm:"primaryKey;type:uuid;not null"`
 	Asset      Asset  `gorm:"foreignKey:AssetPtrID;references:ID"`
 }
 
 type GPT struct {
-	AssetPtrID string `gorm:"primaryKey;type:char(36);not null"`
+	AssetPtrID string `gorm:"primaryKey;type:uuid;not null"`
 	Asset      Asset  `gorm:"foreignKey:AssetPtrID;references:ID"`
 	Proxy      string `json:"proxy" gorm:"type:varchar(128);not null"`
 }
 
 type Custom struct {
-	AssetPtrID string `gorm:"primaryKey;type:char(36);not null"`
+	AssetPtrID string `gorm:"primaryKey;type:uuid;not null"`
 	Asset      Asset  `gorm:"foreignKey:AssetPtrID;references:ID"`
 }

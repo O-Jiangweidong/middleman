@@ -13,6 +13,7 @@ import (
 
 	"middleman/pkg/config"
 	"middleman/pkg/database/models"
+	mm "middleman/pkg/middleware/models"
 )
 
 const (
@@ -58,7 +59,7 @@ func (dm *Manager) initDatabaseManager() error {
 		return err
 	}
 	db, err := dm.connectDB(DefaultDBName, func(db *gorm.DB) error {
-		return db.AutoMigrate(&models.JumpServer{})
+		return db.AutoMigrate(&mm.JumpServer{})
 	})
 	if err != nil {
 		return err
@@ -100,6 +101,7 @@ func (dm *Manager) GetDB(name string) (*gorm.DB, error) {
 			&models.Asset{}, &models.Host{},
 			&models.Device{}, &models.Database{}, &models.Cloud{},
 			&models.Web{}, &models.GPT{}, &models.Custom{},
+			&models.Account{},
 		)
 	})
 	if err != nil {

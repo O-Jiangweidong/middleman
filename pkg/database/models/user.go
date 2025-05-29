@@ -1,9 +1,11 @@
 package models
 
+import "time"
+
 type UserGroup struct {
 	ID          string   `json:"id" gorm:"type:char(36);primaryKey;not null"`
 	Name        string   `json:"name" gorm:"type:varchar(128);not null"`
-	Comment     string   `json:"comment" gorm:"type:text;not null"`
+	Comment     string   `json:"comment" gorm:"type:text"`
 	CreatedBy   string   `json:"created_by" gorm:"type:varchar(128);default:null"`
 	OrgID       string   `json:"org_id" gorm:"type:varchar(36);not null;index"`
 	UpdatedBy   string   `json:"updated_by" gorm:"type:varchar(128);default:null"`
@@ -41,7 +43,14 @@ type User struct {
 	Password         string `json:"password" gorm:"-"`
 }
 
-func (u *User) ToJMSUser() *JMSUser {
+func (u *User) IsValid() bool {
+	if !u.IsActive {
+		return false
+	}
+	return u.DateExpired.After(time.Now())
+}
+
+func (u *User) ToJMSUser() JMSUser {
 	user := JMSUser{User: *u}
 	var orgRoles, systemRoles []string
 	for _, role := range u.Roles {
@@ -60,7 +69,7 @@ func (u *User) ToJMSUser() *JMSUser {
 		userGroups = append(userGroups, group.ID)
 	}
 	user.Groups = userGroups
-	return &user
+	return user
 }
 
 type JMSUser struct {

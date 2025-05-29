@@ -9,7 +9,7 @@ import (
 	"middleman/pkg/config"
 	"middleman/pkg/consts"
 	"middleman/pkg/database"
-	"middleman/pkg/database/models"
+	"middleman/pkg/middleware/models"
 	"middleman/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -124,39 +124,10 @@ func getSlaveNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": baseServices, "total": len(baseServices)})
 }
 
-func getAllowedFields(resourceType string) map[string]bool {
-	switch resourceType {
-	case User:
-		return map[string]bool{
-			"id":       true,
-			"username": true,
-			"email":    true,
-		}
-	case Role:
-		return map[string]bool{
-			"id":      true,
-			"name":    true,
-			"scope":   true,
-			"builtin": true,
-		}
-	default:
-		return make(map[string]bool)
-	}
-}
-
-func getSearchFields(resourceType string) []string {
-	switch resourceType {
-	case User:
-		return []string{"username", "name", "email"}
-	default:
-		return []string{}
-	}
-}
-
 func getResources(c *gin.Context) {
 	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
-	dbName := c.MustGet(consts.DBInfoContextKey).(models.JumpServer).Name
-	fmt.Println("DB Name:", dbName)
+	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
+	fmt.Println("DB Name:", dbInfo.Name)
 	if db == nil {
 		c.JSON(http.StatusPreconditionFailed, gin.H{
 			"error": "Database not found", "details": "Database not found",
@@ -164,8 +135,9 @@ func getResources(c *gin.Context) {
 		return
 	}
 
-	processedParams := map[string]bool{
-		"offset": true, "limit": true, "type": true, "search": true,
+	handle := newResourcesHandler(dbInfo)
+	handle.processedParams = map[string]bool{
+		"offset": true, "limit": true, "m_type": true, "search": true,
 	}
 
 	offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
@@ -174,48 +146,48 @@ func getResources(c *gin.Context) {
 	}
 
 	limit, err := strconv.Atoi(c.DefaultQuery("limit", "15"))
-	if err != nil || limit < 1 || limit > 100 {
-		limit = 15
-	}
-
-	type_ := c.Query("type")
-	resourceMap := map[string]interface{}{
-		User:     &[]models.User{},
-		Asset:    &[]models.Asset{},
-		Platform: &[]models.Platform{},
-		Perm:     &[]models.Permission{},
-		Host:     &[]models.Host{},
-		Device:   &[]models.Device{},
-		Database: &[]models.Database{},
-		Cloud:    &[]models.Cloud{},
-		Web:      &[]models.Web{},
-		Gpt:      &[]models.GPT{},
-		Custom:   &[]models.Custom{},
-		Role:     &[]models.RbacRole{},
-	}
-
-	resources, exists := resourceMap[type_]
-	if !exists {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid type", "details": type_})
+	if err != nil || limit < 1 || limit > 200 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid param limit",
+			"details": "Param limit must be between 1 and 200",
+		})
 		return
 	}
 
-	allowedFields := getAllowedFields(type_)
-
-	q := db.Model(resources)
-	for key, values := range c.Request.URL.Query() {
-		if processedParams[key] || !allowedFields[key] {
-			continue
-		}
-
-		if len(values) > 0 {
-			q = q.Where(fmt.Sprintf("%s = ?", key), values[len(values)-1])
-		}
+	var resources interface{}
+	var count int64
+	resourceType := c.Query("m_type")
+	switch resourceType {
+	case User:
+		resources, count, err = handle.getUsers(c, db, limit, offset)
+	case Platform:
+		resources, count, err = handle.getPlatforms(c, db, limit, offset)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request type",
+			"details": fmt.Sprintf("Invalid request type: %s", resourceType),
+		})
+		return
 	}
 
-	search := c.Query("search")
-	searchFields := getSearchFields(type_)
+	if err != nil {
+		c.JSON(http.StatusPreconditionFailed, gin.H{
+			"error": "Database error", "details": err.Error(),
+		})
+		return
+	}
 
+	c.JSON(http.StatusOK, gin.H{"results": resources, "count": count})
+}
+
+type ResourcesHandler struct {
+	jmsClient *utils.JumpServer
+
+	processedParams map[string]bool
+}
+
+func (h *ResourcesHandler) handleSearch(c *gin.Context, q *gorm.DB, searchFields []string) *gorm.DB {
+	search := c.Query("search")
 	if search != "" && len(searchFields) > 0 {
 		var conditions []string
 		var args []interface{}
@@ -226,21 +198,7 @@ func getResources(c *gin.Context) {
 
 		q = q.Where("("+strings.Join(conditions, " OR ")+")", args...)
 	}
-
-	var count int64
-	result := q.Count(&count).Limit(limit).Offset(offset).Find(resources)
-	if result.Error != nil {
-		c.JSON(http.StatusPreconditionFailed, gin.H{
-			"error": "Database error", "details": result.Error.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"results": resources, "count": count})
-}
-
-type ResourcesHandler struct {
-	jmsClient *utils.JumpServer
+	return q
 }
 
 func newResourcesHandler(dbInfo models.JumpServer) *ResourcesHandler {
@@ -272,6 +230,10 @@ func saveResources(c *gin.Context) {
 		err = handler.saveRole(c, db)
 	case UserGroup:
 		err = handler.saveUserGroup(c, db)
+	case Platform:
+		err = handler.savePlatform(c, db)
+	case Host:
+		err = handler.saveHost(c, db)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",

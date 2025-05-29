@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"middleman/pkg/database/models"
 	"net/http"
 )
 
@@ -32,11 +33,12 @@ func (jms *JumpServer) doRequest(method, path string, body interface{}) (*http.R
 
 	req.Header.Set("Authorization", "Token "+jms.privateKey)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Middleman-Version", "1.0")
 
 	return jms.client.Do(req)
 }
 
-func (jms *JumpServer) CreateUser(user interface{}) error {
+func (jms *JumpServer) CreateUser(user models.JMSUser) error {
 	url := "/api/v1/users/users/"
 	resp, err := jms.doRequest("POST", url, user)
 	if err != nil {
@@ -51,6 +53,35 @@ func (jms *JumpServer) CreateUser(user interface{}) error {
 
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("创建用户请求失败，状态码: %d, 响应体: %s",
+			resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+func (jms *JumpServer) CreateAsset(asset interface{}) error {
+	var category string
+	var newAsset models.Asset
+	switch v := asset.(type) {
+	case models.Host:
+		category = "hosts"
+		newAsset = v.Asset
+	default:
+		return fmt.Errorf("unsupport category")
+	}
+	url := fmt.Sprintf("/api/v1/assets/%s/?platform=%v", category, newAsset.PlatformID)
+	resp, err := jms.doRequest("POST", url, newAsset.ToJmsAsset())
+	if err != nil {
+		return fmt.Errorf("发送请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("创建资产请求失败，状态码: %d, 响应体: %s",
 			resp.StatusCode, string(body))
 	}
 	return nil

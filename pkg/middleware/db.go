@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"fmt"
-	"middleman/pkg/database/models"
 	"net/http"
 	"strings"
 
@@ -10,18 +9,19 @@ import (
 
 	"middleman/pkg/consts"
 	"middleman/pkg/database"
+	mm "middleman/pkg/middleware/models"
 )
 
 func DatabaseMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var dbName string
-		var server models.JumpServer
+		var server mm.JumpServer
 		authHeader := c.GetHeader("Authorization")
 		parts := strings.Split(authHeader, " ")
 		credentials := strings.Split(parts[1], ":")
 		defaultDB := database.GetDBManager().GetDefaultDB()
 
-		defaultDB.Model(&models.JumpServer{}).
+		defaultDB.Model(&mm.JumpServer{}).
 			Where("access_key = ? AND secret_key = ?", credentials[0], credentials[1]).
 			Find(&server)
 		dbName = string(server.Name)
@@ -35,7 +35,7 @@ func DatabaseMiddleware() gin.HandlerFunc {
 		}
 		if dbName != database.DefaultDBName {
 			var count int64
-			defaultDB.Model(&models.JumpServer{}).
+			defaultDB.Model(&mm.JumpServer{}).
 				Where("name = ?", dbName).Count(&count)
 			if count < 1 {
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{

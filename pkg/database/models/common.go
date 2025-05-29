@@ -7,11 +7,15 @@ import (
 	"time"
 )
 
+const (
+	DefaultOrgID = "00000000-0000-0000-0000-000000000002"
+)
+
 const utcFormat = "2006-01-02 15:04:05.000000-07:00"
 
 var (
 	supportedTimeFormat = []string{
-		utcFormat, time.RFC3339,
+		utcFormat, time.RFC3339, "2006/01/02 15:04:05 +0800",
 	}
 )
 
