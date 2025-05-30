@@ -21,7 +21,7 @@ const (
 	Asset        = "asset"
 	Account      = "account"
 	Platform     = "platform"
-	Perm         = "Permission"
+	Permission   = "perm"
 	Host         = "host"
 	Device       = "device"
 	Database     = "database"
@@ -165,8 +165,12 @@ func getResources(c *gin.Context) {
 		resources, count, err = handle.getPlatforms(c, db, limit, offset)
 	case Asset:
 		resources, count, err = handle.getAssets(c, db, limit, offset)
+	case Host:
+		resources, count, err = handle.getAssets(c, db, limit, offset)
 	case Account:
 		resources, count, err = handle.getAccounts(c, db, limit, offset)
+	case Permission:
+		resources, count, err = handle.getPerms(c, db, limit, offset)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",
@@ -226,7 +230,7 @@ func saveResources(c *gin.Context) {
 		return
 	}
 
-	resourceType := c.Query("type")
+	resourceType := c.Query("m_type")
 
 	var err error
 	var ids []string
@@ -241,6 +245,8 @@ func saveResources(c *gin.Context) {
 		err = handler.savePlatform(c, db)
 	case Host:
 		ids, err = handler.saveHost(c, db)
+	case Permission:
+		ids, err = handler.savePerm(c, db)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",
@@ -254,6 +260,7 @@ func saveResources(c *gin.Context) {
 			"error":   fmt.Sprintf("Failed to save resource: %v", err.Error()),
 			"details": "Database operation failed",
 		})
+		return
 	}
 
 	for _, id := range ids {
@@ -261,6 +268,49 @@ func saveResources(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "Permission created successfully",
+		"message": fmt.Sprintf("Resource[%s] created successfully", resourceType),
+	})
+}
+
+func deleteResources(c *gin.Context) {
+	// TODO 后边 context 中没有 db，需要从缓存中判断走那个
+	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
+	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
+	//cache := utils.GetCache()
+	handler := newResourcesHandler(dbInfo)
+
+	if db == nil || dbInfo.Name == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Database not found", "details": "Database not found",
+		})
+		return
+	}
+
+	resourceType := c.Query("m_type")
+	id := c.Param("id")
+	var err error
+	switch resourceType {
+	case Permission:
+		err = handler.deletePerm(id, db)
+	case Asset:
+		err = handler.deleteAsset(id, db)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request type",
+			"details": fmt.Sprintf("Invalid request type: %s", resourceType),
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   fmt.Sprintf("Failed to delete resource: %v", err.Error()),
+			"details": "Database operation failed",
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": fmt.Sprintf("Resource[%s] deleted successfully", resourceType),
 	})
 }

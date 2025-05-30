@@ -19,9 +19,13 @@ var (
 	}
 )
 
+type OnlyID struct {
+	ID string `json:"id"`
+}
+
 type LabelValue struct {
-	Value interface{} `json:"value"`
-	Label string      `json:"label"`
+	Value interface{} `json:"value,omitempty"`
+	Label string      `json:"label,omitempty"`
 }
 
 type JSONMap map[string]interface{}
@@ -54,17 +58,17 @@ func (j *JSONMap) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, j)
 }
 
-type JSONArray []interface{}
+type StringArray []string
 
-func (j JSONArray) Value() (driver.Value, error) {
-	if j == nil {
+func (sa StringArray) Value() (driver.Value, error) {
+	if sa == nil {
 		return nil, nil
 	}
-	return json.Marshal(j)
+	return json.Marshal(sa)
 }
 
-func (j JSONArray) Scan(value interface{}) error {
-	return json.Unmarshal(value.([]byte), &j)
+func (sa *StringArray) Scan(value interface{}) error {
+	return json.Unmarshal(value.([]byte), &sa)
 }
 
 type UTCTime struct {

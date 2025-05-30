@@ -24,12 +24,12 @@ func (jms *JumpServer) doRequest(method, path string, body interface{}) (*http.R
 	if body != nil {
 		reqBody, err = json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("序列化请求体失败: %w", err)
+			return nil, fmt.Errorf("serializer body failed: %w", err)
 		}
 	}
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
+		return nil, fmt.Errorf("new request failed: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Token "+jms.privateKey)
@@ -39,24 +39,33 @@ func (jms *JumpServer) doRequest(method, path string, body interface{}) (*http.R
 	return jms.client.Do(req)
 }
 
-func (jms *JumpServer) CreateUser(user models.JMSUser) error {
-	url := "/api/v1/users/users/"
-	resp, err := jms.doRequest("POST", url, user)
+func (jms *JumpServer) handleCreate(url string, obj interface{}) error {
+	resp, err := jms.doRequest("POST", url, obj)
 	if err != nil {
-		return fmt.Errorf("发送请求失败: %w", err)
+		return fmt.Errorf("send request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("读取响应失败: %w", err)
+		return fmt.Errorf("read response failed: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("创建用户请求失败，状态码: %d, 响应体: %s",
+		return fmt.Errorf("create failed，status code: %d, body: %s",
 			resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+func (jms *JumpServer) CreateUser(user models.JMSUser) error {
+	url := "/api/v1/users/users/"
+	return jms.handleCreate(url, user)
+}
+
+func (jms *JumpServer) CreatePerm(perm models.JmsAssetPermission) error {
+	url := "/api/v1/perms/asset-permissions/"
+	return jms.handleCreate(url, perm)
 }
 
 func (jms *JumpServer) CreateAsset(asset interface{}) error {
@@ -70,22 +79,7 @@ func (jms *JumpServer) CreateAsset(asset interface{}) error {
 		return fmt.Errorf("unsupport category")
 	}
 	url := fmt.Sprintf("/api/v1/assets/%s/?platform=%v", category, newAsset.PlatformID)
-	resp, err := jms.doRequest("POST", url, newAsset.ToJmsAsset())
-	if err != nil {
-		return fmt.Errorf("发送请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("读取响应失败: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("创建资产请求失败，状态码: %d, 响应体: %s",
-			resp.StatusCode, string(body))
-	}
-	return nil
+	return jms.handleCreate(url, newAsset.ToJms())
 }
 
 func NewJumpServer(endpoint string, privateKey string) *JumpServer {

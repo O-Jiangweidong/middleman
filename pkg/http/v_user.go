@@ -17,8 +17,8 @@ func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (ids []string, 
 
 	for _, user := range users {
 		var roleIds, groupIds []string
-		for _, role := range user.Roles {
-			roleIds = append(roleIds, role.ID)
+		for _, roleId := range user.RoleIds {
+			roleIds = append(roleIds, roleId)
 		}
 		for _, group := range user.UserGroups {
 			groupIds = append(groupIds, group.ID)
@@ -28,7 +28,7 @@ func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (ids []string, 
 		if len(roleIds) > 0 {
 			db.Model(&roles).Where("id IN ?", roleIds).Find(&roles)
 		}
-
+		user.Roles = roles
 		jmsUser := user.ToJMSUser()
 
 		var roleBindings []models.RbacRoleBinding

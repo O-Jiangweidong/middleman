@@ -37,13 +37,13 @@ type Protocol struct {
 	Port int64  `json:"port"`
 }
 
-type ProtocolList []Protocol
+type ProtocolArray []Protocol
 
-func (p *ProtocolList) Value() (driver.Value, error) {
+func (p ProtocolArray) Value() (driver.Value, error) {
 	return json.Marshal(p)
 }
 
-func (p *ProtocolList) Scan(value interface{}) error {
+func (p *ProtocolArray) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
@@ -65,23 +65,26 @@ type SimpleAsset struct {
 }
 
 type Asset struct {
-	ID           string       `json:"id" gorm:"type:uuid;primaryKey;not null"`
-	Address      string       `json:"address" gorm:"type:varchar(767);not null"`
-	Name         string       `json:"name" gorm:"type:varchar(128);not null"`
-	IsActive     bool         `json:"is_active" gorm:"type:boolean;not null"`
-	CreatedBy    string       `json:"created_by,omitempty" gorm:"type:varchar(128)"`
-	UpdatedBy    string       `json:"updated_by,omitempty" gorm:"type:varchar(128)"`
-	Comment      string       `json:"comment" gorm:"type:text"`
-	OrgID        string       `json:"org_id,omitempty" gorm:"type:uuid;not null;index"`
-	PlatformID   uint         `json:"platform_id,omitempty" gorm:"type:integer;not null"`
-	Connectivity string       `json:"connectivity" gorm:"type:varchar(16);not null"`
-	DateCreated  *UTCTime     `json:"date_created,omitempty" gorm:"type:timestamp with time zone;default:null"`
-	DateVerified *UTCTime     `json:"date_verified,omitempty" gorm:"type:timestamp with time zone;default:null"`
-	DateUpdated  *UTCTime     `json:"date_updated" gorm:"type:timestamp with time zone;default:null"`
-	Protocols    ProtocolList `json:"protocols" gorm:"type:jsonb;not null"`
+	ID           string        `json:"id" gorm:"type:uuid;primaryKey;not null"`
+	Address      string        `json:"address,omitempty" gorm:"type:varchar(767);not null"`
+	Name         string        `json:"name,omitempty" gorm:"type:varchar(128);not null"`
+	IsActive     bool          `json:"is_active,omitempty" gorm:"type:boolean;default:true"`
+	CreatedBy    string        `json:"created_by,omitempty" gorm:"type:varchar(128)"`
+	UpdatedBy    string        `json:"updated_by,omitempty" gorm:"type:varchar(128)"`
+	Comment      string        `json:"comment,omitempty" gorm:"type:text"`
+	OrgID        string        `json:"org_id,omitempty" gorm:"type:uuid;not null;index"`
+	PlatformID   uint          `json:"platform_id,omitempty" gorm:"type:integer;not null"`
+	Connectivity string        `json:"connectivity,omitempty" gorm:"type:varchar(16);not null"`
+	DateCreated  *UTCTime      `json:"date_created,omitempty" gorm:"type:timestamp with time zone;default:null"`
+	DateVerified *UTCTime      `json:"date_verified,omitempty" gorm:"type:timestamp with time zone;default:null"`
+	DateUpdated  *UTCTime      `json:"date_updated,omitempty" gorm:"type:timestamp with time zone;default:null"`
+	Protocols    ProtocolArray `json:"protocols,omitempty" gorm:"type:jsonb;not null"`
 
-	Platform Platform  `json:"platform" gorm:"foreignKey:PlatformID;references:ID"`
-	Accounts []Account `json:"accounts" gorm:"foreignKey:AssetID;constraint:OnDelete:CASCADE"`
+	Platform Platform  `json:"platform,omitempty" gorm:"foreignKey:PlatformID;references:ID"`
+	Accounts []Account `json:"accounts,omitempty" gorm:"foreignKey:AssetID;constraint:OnDelete:CASCADE"`
+
+	Permissions []AssetPermission `json:"-" gorm:"many2many:perms_assetpermission_assets;joinForeignKey:asset_id;joinReferences:assetpermission_id;constraint:OnDelete:CASCADE"`
+	Nodes       []Node            `json:"-" gorm:"many2many:assets_asset_nodes;joinForeignKey:node_id;joinReferences:asset_id;constraint:OnDelete:CASCADE"`
 
 	Host     *Host     `json:"-" gorm:"foreignKey:AssetPtrID"`
 	Web      *Web      `json:"-" gorm:"foreignKey:AssetPtrID"`
@@ -99,7 +102,7 @@ type JmsAsset struct {
 	Asset
 }
 
-func (a Asset) ToJmsAsset() JmsAsset {
+func (a Asset) ToJms() JmsAsset {
 	a.Platform.ID = a.PlatformID
 	a.OrgID = ""
 	a.PlatformID = 0
@@ -124,7 +127,7 @@ type Web struct {
 
 type Host struct {
 	AssetPtrID string `json:"asset_ptr_id" gorm:"primaryKey;type:uuid;not null"`
-	Asset      Asset  `json:"asset" gorm:"foreignKey:AssetPtrID;references:ID"`
+	Asset      Asset  `json:"asset" gorm:"foreignKey:AssetPtrID;references:ID;constraint:OnDelete:CASCADE"`
 }
 
 func (h *Host) UnmarshalJSON(data []byte) error {
@@ -168,4 +171,28 @@ type GPT struct {
 type Custom struct {
 	AssetPtrID string `gorm:"primaryKey;type:uuid;not null"`
 	Asset      Asset  `gorm:"foreignKey:AssetPtrID;references:ID"`
+}
+
+type Node struct {
+	ID           string   `json:"id" gorm:"type:uuid;primaryKey"`
+	Key          string   `json:"key" gorm:"type:varchar(64);not null;unique"`
+	Value        string   `json:"value" gorm:"type:varchar(128);not null"`
+	ChildMark    int      `json:"child_mark" gorm:"type:int;not null"`
+	OrgID        string   `json:"org_id" gorm:"type:uuid;not null;index"`
+	AssetsAmount int      `json:"assets_amount" gorm:"type:int;default:0"`
+	ParentKey    string   `json:"parent_key" gorm:"type:varchar(64);not null;index"`
+	FullValue    string   `json:"full_value" gorm:"type:varchar(4096);not null"`
+	Comment      string   `json:"comment" gorm:"type:text"`
+	CreatedBy    string   `json:"created_by" gorm:"type:varchar(128);default null"`
+	UpdatedBy    string   `json:"updated_by" gorm:"type:varchar(128);default null"`
+	DateCreate   *UTCTime `json:"date_create" gorm:"type:timestamp with time zone;default:null"`
+	DateCreated  *UTCTime `json:"date_created" gorm:"type:timestamp with time zone;default:null"`
+	DateUpdated  *UTCTime `json:"date_updated" gorm:"type:timestamp with time zone;default:null"`
+
+	Permissions []AssetPermission `json:"-" gorm:"many2many:perms_assetpermission_nodes;joinForeignKey:node_id;joinReferences:assetpermission_id;constraint:OnDelete:CASCADE"`
+	Assets      []Asset           `json:"-" gorm:"many2many:assets_asset_nodes;joinForeignKey:node_id;joinReferences:asset_id;constraint:OnDelete:CASCADE"`
+}
+
+func (Node) TableName() string {
+	return "assets_node"
 }

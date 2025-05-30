@@ -170,3 +170,7 @@ func (h *ResourcesHandler) getAccounts(c *gin.Context, db *gorm.DB, limit, offse
 	}
 	return accounts, count, nil
 }
+
+func (h *ResourcesHandler) deleteAsset(id string, db *gorm.DB) (err error) {
+	return db.Where("id = ?", id).Delete(&models.Asset{}).Error
+}

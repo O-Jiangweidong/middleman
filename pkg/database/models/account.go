@@ -5,7 +5,7 @@ type Account struct {
 	OrgID        string   `json:"org_id" gorm:"type:uuid;not null;index"`
 	Connectivity string   `json:"connectivity" gorm:"type:varchar(16);not null"`
 	Name         string   `json:"name" gorm:"type:varchar(128);not null;uniqueIndex:idx_name_asset"`
-	Comment      string   `json:"comment,omitempty" gorm:"type:text;not null"`
+	Comment      string   `json:"comment,omitempty" gorm:"type:text"`
 	Username     string   `json:"username" gorm:"type:varchar(128);not null"`
 	SecretType   string   `json:"secret_type" gorm:"type:varchar(16);not null"`
 	Privileged   bool     `json:"privileged" gorm:"type:boolean;not null"`
