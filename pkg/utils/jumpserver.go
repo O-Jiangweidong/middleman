@@ -63,6 +63,11 @@ func (jms *JumpServer) CreateUser(user models.JMSUser) error {
 	return jms.handleCreate(url, user)
 }
 
+func (jms *JumpServer) CreateNode(node models.Node) error {
+    url := "/api/v1/nodes/nodes/"
+    return jms.handleCreate(url, node)
+}
+
 func (jms *JumpServer) CreatePerm(perm models.JmsAssetPermission) error {
 	url := "/api/v1/perms/asset-permissions/"
 	return jms.handleCreate(url, perm)

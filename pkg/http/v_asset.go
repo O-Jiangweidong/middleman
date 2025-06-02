@@ -20,7 +20,7 @@ func (h *ResourcesHandler) savePlatform(c *gin.Context, db *gorm.DB) (err error)
 			return err
 		}
 		if count > 0 {
-			if err = db.Model(platform).Updates(&platform).Error; err != nil {
+			if err = db.Model(platform).Omit("id").Updates(&platform).Error; err != nil {
 				return err
 			}
 		} else {
@@ -56,7 +56,7 @@ func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, 
 		host.Asset.Accounts = newAccounts
 
 		if count > 0 {
-			if err = db.Model(host).Updates(&host).Error; err != nil {
+			if err = db.Model(host).Omit("id").Updates(&host).Error; err != nil {
 				return nil, err
 			}
 		} else {

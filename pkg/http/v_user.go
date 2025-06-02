@@ -52,7 +52,7 @@ func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (ids []string, 
 			return nil, err
 		}
 		if count > 0 {
-			if err = db.Model(user).Updates(&user).Error; err != nil {
+			if err = db.Model(user).Omit("id").Updates(&user).Error; err != nil {
 				return nil, err
 			}
 		} else {
@@ -91,7 +91,7 @@ func (h *ResourcesHandler) saveRole(c *gin.Context, db *gorm.DB) (err error) {
 			return err
 		}
 		if count > 0 {
-			if err = db.Model(role).Updates(&role).Error; err != nil {
+			if err = db.Model(role).Omit("id").Updates(&role).Error; err != nil {
 				return err
 			}
 		} else {
@@ -114,7 +114,7 @@ func (h *ResourcesHandler) saveUserGroup(c *gin.Context, db *gorm.DB) (ids []str
 			return nil, err
 		}
 		if count > 0 {
-			if err = db.Model(group).Updates(&group).Error; err != nil {
+			if err = db.Model(group).Omit("id").Updates(&group).Error; err != nil {
 				return nil, err
 			}
 		} else {

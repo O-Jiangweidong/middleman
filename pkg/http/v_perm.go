@@ -46,7 +46,7 @@ func (h *ResourcesHandler) savePerm(c *gin.Context, db *gorm.DB) (ids []string, 
 		}
 
 		if count > 0 {
-			if err = db.Model(perm).Updates(&perm).Error; err != nil {
+			if err = db.Model(perm).Omit("id").Updates(&perm).Error; err != nil {
 				return nil, err
 			}
 		} else {

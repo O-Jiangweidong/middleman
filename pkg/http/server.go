@@ -34,6 +34,7 @@ func NewHttpServer() *HttpServer {
 	g.Use(middleware.DatabaseMiddleware())
 	g.GET("resources/", getResources)
 	g.POST("resources/", saveResources)
+	g.PATCH("resources/:id/", updateResources)
 	g.DELETE("resources/:id/", deleteResources)
 
 	return &HttpServer{
