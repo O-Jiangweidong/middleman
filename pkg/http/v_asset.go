@@ -5,7 +5,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-
 	"middleman/pkg/database/models"
 )
 
@@ -16,7 +15,8 @@ func (h *ResourcesHandler) savePlatform(c *gin.Context, db *gorm.DB) (err error)
 	}
 	for _, platform := range platforms {
 		var count int64
-		if err = db.Model(platform).Where("id = ?", platform.ID).Count(&count).Error; err != nil {
+		if err = db.Model(platform).Where("id = ?", platform.ID).
+			Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
@@ -40,7 +40,8 @@ func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, 
 	}
 	for _, host := range hosts {
 		var count int64
-		if err = db.Model(host).Where("asset_ptr_id = ?", host.Asset.ID).Count(&count).Error; err != nil {
+		if err = db.Model(host).Where("asset_ptr_id = ?", host.Asset.ID).
+			Count(&count).Error; err != nil {
 			return nil, err
 		}
 
@@ -60,9 +61,20 @@ func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, 
 				return nil, err
 			}
 		} else {
-			if err = db.Create(&host).Error; err != nil {
+			if err = db.Debug().Create(&host).Error; err != nil {
 				return nil, err
 			}
+
+			var nodes []models.Node
+			if err = db.Debug().Model(nodes).Select("id").
+				Where("id IN ?", host.Asset.NodeIds).Find(&nodes).Error; err != nil {
+				return nil, err
+			}
+
+			if err = db.Debug().Model(host).Association("Nodes").Append(nodes); err != nil {
+				return nil, err
+			}
+
 			if err = h.jmsClient.CreateAsset(host); err != nil {
 				return nil, err
 			}
@@ -73,7 +85,9 @@ func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, 
 	return ids, nil
 }
 
-func (h *ResourcesHandler) getPlatforms(c *gin.Context, db *gorm.DB, limit, offset int) (interface{}, int64, error) {
+func (h *ResourcesHandler) getPlatforms(
+	c *gin.Context, db *gorm.DB, limit, offset int,
+) (interface{}, int64, error) {
 	var err error
 	var platforms []models.Platform
 	queryFields := map[string]bool{
@@ -102,7 +116,9 @@ func (h *ResourcesHandler) getPlatforms(c *gin.Context, db *gorm.DB, limit, offs
 	return platforms, count, nil
 }
 
-func (h *ResourcesHandler) getAssets(c *gin.Context, db *gorm.DB, limit, offset int) (interface{}, int64, error) {
+func (h *ResourcesHandler) getAssets(
+	c *gin.Context, db *gorm.DB, limit, offset int, category string,
+) (interface{}, int64, error) {
 	var err error
 	var assets []models.Asset
 	queryFields := map[string]bool{
@@ -111,7 +127,16 @@ func (h *ResourcesHandler) getAssets(c *gin.Context, db *gorm.DB, limit, offset 
 		"name":      true,
 		"is_active": true,
 	}
-	q := db.Model(&models.Asset{}).Preload("Platform")
+	q := db.Model(&models.Asset{}).Preload("Platform").
+		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id", "value", "full_value")
+		})
+
+	if category != "" {
+		q = q.Joins("JOIN platforms ON platforms.id = assets.platform_id").
+			Where("platforms.category = ?", category)
+	}
+
 	for key, values := range c.Request.URL.Query() {
 		if h.processedParams[key] || !queryFields[key] {
 			continue
@@ -130,13 +155,28 @@ func (h *ResourcesHandler) getAssets(c *gin.Context, db *gorm.DB, limit, offset 
 		return nil, 0, err
 	}
 
-	var newAssets []models.Asset
+	type respAsset struct {
+		models.Asset
+
+		Nodes        []models.SimpleNode `json:"nodes"`
+		NodesDisplay []string            `json:"nodes_display"`
+	}
+	newAssets := make([]respAsset, 0, len(assets))
 	for _, asset := range assets {
 		p := asset.Platform
 		asset.Category = models.LabelValue{Label: p.Category, Value: p.Category}
 		asset.Type = models.LabelValue{Label: p.Type, Value: p.Type}
 		asset.Accounts = nil
-		newAssets = append(newAssets, asset)
+
+		nodesDisplay := make([]string, 0, len(asset.Nodes))
+		newNodes := make([]models.SimpleNode, 0, len(asset.Nodes))
+		for _, n := range asset.Nodes {
+			nodesDisplay = append(nodesDisplay, n.FullValue)
+			newNodes = append(newNodes, models.SimpleNode{ID: n.ID, Name: n.Value})
+		}
+		newAssets = append(newAssets, respAsset{
+			Asset: asset, NodesDisplay: nodesDisplay, Nodes: newNodes,
+		})
 	}
 	return newAssets, count, nil
 }
@@ -172,5 +212,8 @@ func (h *ResourcesHandler) getAccounts(c *gin.Context, db *gorm.DB, limit, offse
 }
 
 func (h *ResourcesHandler) deleteAsset(id string, db *gorm.DB) (err error) {
-	return db.Where("id = ?", id).Delete(&models.Asset{}).Error
+	if err = db.Where("id = ?", id).Delete(&models.Asset{}).Error; err != nil {
+		return err
+	}
+	return nil
 }

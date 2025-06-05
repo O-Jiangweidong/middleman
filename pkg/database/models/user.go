@@ -3,11 +3,11 @@ package models
 import "time"
 
 type UserGroup struct {
-	ID          string   `json:"id" gorm:"type:char(36);primaryKey;not null"`
+	ID          string   `json:"id" gorm:"type:uuid;primaryKey;not null"`
 	Name        string   `json:"name,omitempty" gorm:"type:varchar(128);not null"`
 	Comment     string   `json:"comment,omitempty" gorm:"type:text"`
 	CreatedBy   string   `json:"created_by,omitempty" gorm:"type:varchar(128);default:null"`
-	OrgID       string   `json:"org_id,omitempty" gorm:"type:varchar(36);not null;index"`
+	OrgID       string   `json:"org_id,omitempty" gorm:"type:uuid;not null;index"`
 	UpdatedBy   string   `json:"updated_by,omitempty" gorm:"type:varchar(128);default:null"`
 	DateCreated *UTCTime `json:"date_created,omitempty" gorm:"type:timestamp with time zone;default:null"`
 	DateUpdated *UTCTime `json:"date_updated,omitempty" gorm:"type:timestamp with time zone;not null"`

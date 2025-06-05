@@ -67,12 +67,12 @@ type SimpleAsset struct {
 type Asset struct {
 	ID           string        `json:"id" gorm:"type:uuid;primaryKey;not null"`
 	Address      string        `json:"address,omitempty" gorm:"type:varchar(767);not null"`
-	Name         string        `json:"name,omitempty" gorm:"type:varchar(128);not null"`
+	Name         string        `json:"name,omitempty" gorm:"type:varchar(128);not null;uniqueIndex:idx_org_name"`
 	IsActive     bool          `json:"is_active,omitempty" gorm:"type:boolean;default:true"`
 	CreatedBy    string        `json:"created_by,omitempty" gorm:"type:varchar(128)"`
 	UpdatedBy    string        `json:"updated_by,omitempty" gorm:"type:varchar(128)"`
 	Comment      string        `json:"comment,omitempty" gorm:"type:text"`
-	OrgID        string        `json:"org_id,omitempty" gorm:"type:uuid;not null;index"`
+	OrgID        string        `json:"org_id,omitempty" gorm:"type:uuid;not null;index;uniqueIndex:idx_org_name"`
 	PlatformID   uint          `json:"platform_id,omitempty" gorm:"type:integer;not null"`
 	Connectivity string        `json:"connectivity,omitempty" gorm:"type:varchar(16);not null"`
 	DateCreated  *UTCTime      `json:"date_created,omitempty" gorm:"type:timestamp with time zone;default:null"`
@@ -84,18 +84,19 @@ type Asset struct {
 	Accounts []Account `json:"accounts,omitempty" gorm:"foreignKey:AssetID;constraint:OnDelete:CASCADE"`
 
 	Permissions []AssetPermission `json:"-" gorm:"many2many:perms_assetpermission_assets;joinForeignKey:asset_id;joinReferences:assetpermission_id;constraint:OnDelete:CASCADE"`
-	Nodes       []Node            `json:"-" gorm:"many2many:assets_asset_nodes;joinForeignKey:node_id;joinReferences:asset_id;constraint:OnDelete:CASCADE"`
+	Nodes       []Node            `json:"nodes" gorm:"many2many:assets_asset_nodes;joinForeignKey:node_id;joinReferences:asset_id;constraint:OnDelete:CASCADE;SaveReference:false"`
 
-	Host     *Host     `json:"-" gorm:"foreignKey:AssetPtrID"`
-	Web      *Web      `json:"-" gorm:"foreignKey:AssetPtrID"`
-	Device   *Device   `json:"-" gorm:"foreignKey:AssetPtrID"`
-	Database *Database `json:"-" gorm:"foreignKey:AssetPtrID"`
-	Cloud    *Cloud    `json:"-" gorm:"foreignKey:AssetPtrID"`
-	GPT      *GPT      `json:"-" gorm:"foreignKey:AssetPtrID"`
-	Custom   *Custom   `json:"-" gorm:"foreignKey:AssetPtrID"`
+	Host     *Host     `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`
+	Web      *Web      `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`
+	Device   *Device   `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`
+	Database *Database `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`
+	Cloud    *Cloud    `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`
+	GPT      *GPT      `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`
+	Custom   *Custom   `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`
 
 	Category LabelValue `json:"category,omitempty" gorm:"-"`
 	Type     LabelValue `json:"type,omitempty" gorm:"-"`
+	NodeIds  []string   `json:"node_ids,omitempty" gorm:"-"`
 }
 
 type JmsAsset struct {
@@ -131,13 +132,19 @@ type Host struct {
 }
 
 func (h *Host) UnmarshalJSON(data []byte) error {
-	var asset Asset
-	if err := json.Unmarshal(data, &asset); err != nil {
+	var reqAsset struct {
+		Asset
+
+		Nodes   []Node   `json:"-"`
+		NodeIds []string `json:"nodes"`
+	}
+	if err := json.Unmarshal(data, &reqAsset); err != nil {
 		return err
 	}
-	h.AssetPtrID = asset.ID
-	h.Asset = asset
+	h.AssetPtrID = reqAsset.ID
+	h.Asset = reqAsset.Asset
 	h.Asset.OrgID = DefaultOrgID
+	h.Asset.NodeIds = reqAsset.NodeIds
 	return nil
 }
 
@@ -173,21 +180,26 @@ type Custom struct {
 	Asset      Asset  `gorm:"foreignKey:AssetPtrID;references:ID"`
 }
 
+type SimpleNode struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type Node struct {
 	ID           string   `json:"id" gorm:"type:uuid;primaryKey"`
-	Key          string   `json:"key" gorm:"type:varchar(64);not null;unique"`
-	Value        string   `json:"value" gorm:"type:varchar(128);not null"`
-	ChildMark    int      `json:"child_mark" gorm:"type:int;not null"`
-	OrgID        string   `json:"org_id" gorm:"type:uuid;not null;index"`
-	AssetsAmount int      `json:"assets_amount" gorm:"type:int;default:0"`
-	ParentKey    string   `json:"parent_key" gorm:"type:varchar(64);not null;index"`
-	FullValue    string   `json:"full_value" gorm:"type:varchar(4096);not null"`
-	Comment      string   `json:"comment" gorm:"type:text"`
-	CreatedBy    string   `json:"created_by" gorm:"type:varchar(128);default null"`
-	UpdatedBy    string   `json:"updated_by" gorm:"type:varchar(128);default null"`
-	DateCreate   *UTCTime `json:"date_create" gorm:"type:timestamp with time zone;default:null"`
-	DateCreated  *UTCTime `json:"date_created" gorm:"type:timestamp with time zone;default:null"`
-	DateUpdated  *UTCTime `json:"date_updated" gorm:"type:timestamp with time zone;default:null"`
+	Value        string   `json:"value,omitempty" gorm:"type:varchar(128);not null"`
+	Key          string   `json:"key,omitempty" gorm:"type:varchar(64);not null;unique"`
+	ChildMark    int      `json:"child_mark,omitempty" gorm:"type:int;not null"`
+	OrgID        string   `json:"org_id,omitempty" gorm:"type:uuid;not null;index"`
+	AssetsAmount int      `json:"assets_amount,omitempty" gorm:"type:int;default:0"`
+	ParentKey    string   `json:"parent_key,omitempty" gorm:"type:varchar(64);not null;index"`
+	FullValue    string   `json:"full_value,omitempty" gorm:"type:varchar(4096);not null"`
+	Comment      string   `json:"comment,omitempty" gorm:"type:text"`
+	CreatedBy    string   `json:"created_by,omitempty" gorm:"type:varchar(128);default null"`
+	UpdatedBy    string   `json:"updated_by,omitempty" gorm:"type:varchar(128);default null"`
+	DateCreate   *UTCTime `json:"date_create,omitempty" gorm:"type:timestamp with time zone;default:null"`
+	DateCreated  *UTCTime `json:"date_created,omitempty" gorm:"type:timestamp with time zone;default:null"`
+	DateUpdated  *UTCTime `json:"date_updated,omitempty" gorm:"type:timestamp with time zone;default:null"`
 
 	Permissions []AssetPermission `json:"-" gorm:"many2many:perms_assetpermission_nodes;joinForeignKey:node_id;joinReferences:assetpermission_id;constraint:OnDelete:CASCADE"`
 	Assets      []Asset           `json:"-" gorm:"many2many:assets_asset_nodes;joinForeignKey:node_id;joinReferences:asset_id;constraint:OnDelete:CASCADE"`
@@ -195,4 +207,18 @@ type Node struct {
 
 func (Node) TableName() string {
 	return "assets_node"
+}
+
+type JMSNode struct {
+	ID       string `json:"id"`
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	ParentID string `json:"-"`
+}
+
+func (n Node) ToJMS(parentID string) JMSNode {
+	return JMSNode{
+		ID: n.ID, Key: n.Key, Value: n.Value,
+		ParentID: parentID,
+	}
 }

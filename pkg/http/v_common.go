@@ -17,21 +17,24 @@ import (
 )
 
 const (
-	User         = "user"
-	Asset        = "asset"
-	Account      = "account"
-	Platform     = "platform"
-	Permission   = "perm"
-	Host         = "host"
-	Device       = "device"
-	Database     = "database"
-	Cloud        = "cloud"
-	Web          = "web"
-	Gpt          = "gpt"
-	Custom       = "custom"
-	Organization = "organization"
-	Role         = "role"
-	UserGroup    = "user_group"
+	User          = "user"
+	Asset         = "asset"
+	Node          = "node"
+	ChildrenNode  = "children_node"
+	NodeWithAsset = "node_with_assets"
+	Account       = "account"
+	Platform      = "platform"
+	Permission    = "perm"
+	Host          = "host"
+	Device        = "device"
+	Database      = "database"
+	Cloud         = "cloud"
+	Web           = "web"
+	Gpt           = "gpt"
+	Custom        = "custom"
+	Organization  = "organization"
+	Role          = "role"
+	UserGroup     = "user_group"
 )
 
 type RegisterRequest struct {
@@ -164,13 +167,17 @@ func getResources(c *gin.Context) {
 	case Platform:
 		resources, count, err = handle.getPlatforms(c, db, limit, offset)
 	case Asset:
-		resources, count, err = handle.getAssets(c, db, limit, offset)
-	case Host:
-		resources, count, err = handle.getAssets(c, db, limit, offset)
+		resources, count, err = handle.getAssets(c, db, limit, offset, "")
+	case Host, Web, Device, Database, Custom, Gpt:
+		resources, count, err = handle.getAssets(c, db, limit, offset, resourceType)
 	case Account:
 		resources, count, err = handle.getAccounts(c, db, limit, offset)
 	case Permission:
 		resources, count, err = handle.getPerms(c, db, limit, offset)
+	case Node:
+		resources, count, err = handle.getNodes(c, db, limit, offset)
+	case ChildrenNode:
+		resources, count, err = handle.getChildrenNodes(c, db)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",
@@ -183,6 +190,11 @@ func getResources(c *gin.Context) {
 		c.JSON(http.StatusPreconditionFailed, gin.H{
 			"error": "Database error", "details": err.Error(),
 		})
+		return
+	}
+
+	if count == -1 {
+		c.JSON(http.StatusOK, resources)
 		return
 	}
 
@@ -247,6 +259,12 @@ func saveResources(c *gin.Context) {
 		ids, err = handler.saveHost(c, db)
 	case Permission:
 		ids, err = handler.savePerm(c, db)
+	case ChildrenNode:
+		ids, err = handler.saveChildrenNode(c, db)
+	case Node:
+		err = handler.saveNode(c, db)
+	case NodeWithAsset:
+		err = handler.assetNodeRelation(c, db)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",
@@ -269,6 +287,47 @@ func saveResources(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": fmt.Sprintf("Resource[%s] created successfully", resourceType),
+	})
+}
+
+func updateResources(c *gin.Context) {
+	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
+	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
+
+	handler := newResourcesHandler(dbInfo)
+
+	if db == nil || dbInfo.Name == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Database not found", "details": "Database not found",
+		})
+		return
+	}
+
+	resourceType := c.Query("m_type")
+
+	var err error
+	id := c.Param("id")
+	switch resourceType {
+	case Node:
+		err = handler.updateNode(c, db, id)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request type",
+			"details": fmt.Sprintf("Invalid request type: %s", resourceType),
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   fmt.Sprintf("Failed to save resource: %v", err.Error()),
+			"details": "Database operation failed",
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": fmt.Sprintf("Resource[%s] update successfully", resourceType),
 	})
 }
 

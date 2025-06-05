@@ -154,7 +154,7 @@ func (dm *Manager) connectDB(dbName string, callbacks ...DBConnectCallback) (*go
 	}
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxLifetime(time.Hour * 24)
 
 	for _, callback := range callbacks {
 		if callback != nil {

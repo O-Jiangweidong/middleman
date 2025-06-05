@@ -3,7 +3,7 @@ package models
 type RbacRoleBinding struct {
 	ID          string   `json:"id" gorm:"type:uuid;primaryKey;not null"`
 	Scope       string   `json:"scope" gorm:"type:varchar(128);not null"`
-	OrgID       string   `json:"org_id" gorm:"type:uuid;default:null;index"`
+	OrgID       string   `json:"org_id" gorm:"type:uuid;not null;index"`
 	RoleID      string   `json:"role_id" gorm:"type:uuid;not null;index"`
 	UserID      string   `json:"user_id" gorm:"type:uuid;not null;index"`
 	Comment     string   `json:"comment" gorm:"type:text"`
@@ -17,7 +17,7 @@ type RbacRoleBinding struct {
 }
 
 type RbacRole struct {
-	ID          string   `json:"id" gorm:"type:char(36);primaryKey;not null"`
+	ID          string   `json:"id" gorm:"type:uuid;primaryKey;not null"`
 	Name        string   `json:"name" gorm:"type:varchar(128);not null"`
 	Scope       string   `json:"scope" gorm:"type:varchar(128);not null"`
 	Builtin     bool     `json:"builtin" gorm:"type:boolean;not null"`

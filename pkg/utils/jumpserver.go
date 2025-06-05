@@ -58,14 +58,62 @@ func (jms *JumpServer) handleCreate(url string, obj interface{}) error {
 	return nil
 }
 
+func (jms *JumpServer) handlePatch(url string, obj interface{}) error {
+	resp, err := jms.doRequest("PATCH", url, obj)
+	if err != nil {
+		return fmt.Errorf("send request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response failed: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("create failed，status code: %d, body: %s",
+			resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+func (jms *JumpServer) handlePut(url string, obj interface{}) error {
+	resp, err := jms.doRequest("PUT", url, obj)
+	if err != nil {
+		return fmt.Errorf("send request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response failed: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("create failed，status code: %d, body: %s",
+			resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 func (jms *JumpServer) CreateUser(user models.JMSUser) error {
 	url := "/api/v1/users/users/"
 	return jms.handleCreate(url, user)
 }
 
+func (jms *JumpServer) CreateChildrenNode(node models.JMSNode) error {
+	url := fmt.Sprintf("/api/v1/assets/nodes/%s/children/", node.ParentID)
+	return jms.handleCreate(url, node)
+}
+
+func (jms *JumpServer) UpdateNode(id string, data interface{}) error {
+	url := fmt.Sprintf("/api/v1/assets/nodes/%s/", id)
+	return jms.handlePatch(url, data)
+}
+
 func (jms *JumpServer) CreateNode(node models.Node) error {
-    url := "/api/v1/nodes/nodes/"
-    return jms.handleCreate(url, node)
+	url := "/api/v1/assets/nodes/?action=create"
+	return jms.handleCreate(url, node)
 }
 
 func (jms *JumpServer) CreatePerm(perm models.JmsAssetPermission) error {
@@ -85,6 +133,11 @@ func (jms *JumpServer) CreateAsset(asset interface{}) error {
 	}
 	url := fmt.Sprintf("/api/v1/assets/%s/?platform=%v", category, newAsset.PlatformID)
 	return jms.handleCreate(url, newAsset.ToJms())
+}
+
+func (jms *JumpServer) NodeWithAssetsRelation(action, nodeID string, data interface{}) (err error) {
+	url := fmt.Sprintf("/api/v1/assets/nodes/%s/assets/%s/", nodeID, action)
+	return jms.handlePut(url, data)
 }
 
 func NewJumpServer(endpoint string, privateKey string) *JumpServer {

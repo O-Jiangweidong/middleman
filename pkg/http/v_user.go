@@ -37,6 +37,7 @@ func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (ids []string, 
 				ID:    uuid.New().String(),
 				Scope: role.Scope, UserID: user.ID, RoleID: role.ID,
 				CreatedBy: user.CreatedBy, UpdatedBy: user.UpdatedBy,
+				OrgID: models.DefaultOrgID,
 			})
 		}
 		user.Roles = nil
