@@ -84,7 +84,7 @@ type Asset struct {
 	Accounts []Account `json:"accounts,omitempty" gorm:"foreignKey:AssetID;constraint:OnDelete:CASCADE"`
 
 	Permissions []AssetPermission `json:"-" gorm:"many2many:perms_assetpermission_assets;joinForeignKey:asset_id;joinReferences:assetpermission_id;constraint:OnDelete:CASCADE"`
-	Nodes       []Node            `json:"nodes" gorm:"many2many:assets_asset_nodes;joinForeignKey:node_id;joinReferences:asset_id;constraint:OnDelete:CASCADE;SaveReference:false"`
+	Nodes       []Node            `json:"nodes" gorm:"many2many:assets_asset_nodes;joinForeignKey:asset_id;joinReferences:node_id;constraint:OnDelete:CASCADE;SaveReference:false"`
 
 	Host     *Host     `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`
 	Web      *Web      `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`
@@ -101,6 +101,8 @@ type Asset struct {
 
 type JmsAsset struct {
 	Asset
+
+	NodeIds []string `json:"nodes,omitempty" gorm:"-"`
 }
 
 func (a Asset) ToJms() JmsAsset {
@@ -201,8 +203,8 @@ type Node struct {
 	DateCreated  *UTCTime `json:"date_created,omitempty" gorm:"type:timestamp with time zone;default:null"`
 	DateUpdated  *UTCTime `json:"date_updated,omitempty" gorm:"type:timestamp with time zone;default:null"`
 
-	Permissions []AssetPermission `json:"-" gorm:"many2many:perms_assetpermission_nodes;joinForeignKey:node_id;joinReferences:assetpermission_id;constraint:OnDelete:CASCADE"`
-	Assets      []Asset           `json:"-" gorm:"many2many:assets_asset_nodes;joinForeignKey:node_id;joinReferences:asset_id;constraint:OnDelete:CASCADE"`
+	Permissions []AssetPermission `json:"-" gorm:"many2many:perms_assetpermission_nodes;joinForeignKey:node_id;joinReferences:assetpermission_id;constraint:OnDelete:CASCADE;SaveReference:false"`
+	Assets      []Asset           `json:"-" gorm:"many2many:assets_asset_nodes;joinForeignKey:node_id;joinReferences:asset_id;constraint:OnDelete:CASCADE;SaveReference:false"`
 }
 
 func (Node) TableName() string {

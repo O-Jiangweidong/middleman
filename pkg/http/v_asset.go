@@ -61,17 +61,37 @@ func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, 
 				return nil, err
 			}
 		} else {
-			if err = db.Debug().Create(&host).Error; err != nil {
-				return nil, err
-			}
+			err = db.Transaction(func(tx *gorm.DB) error {
+				var txErr error
 
-			var nodes []models.Node
-			if err = db.Debug().Model(nodes).Select("id").
-				Where("id IN ?", host.Asset.NodeIds).Find(&nodes).Error; err != nil {
-				return nil, err
-			}
+				tx = tx.Clauses()
+				if txErr = tx.Debug().Create(&host.Asset).Error; txErr != nil {
+					return txErr
+				}
 
-			if err = db.Debug().Model(host).Association("Nodes").Append(nodes); err != nil {
+				newHost := models.Host{AssetPtrID: host.AssetPtrID}
+				if txErr = tx.Debug().Create(&newHost).Error; txErr != nil {
+					return txErr
+				}
+
+				type Relation struct {
+					AssetID string `gorm:"column:asset_id"`
+					NodeID  string `gorm:"column:node_id"`
+				}
+				var relations []Relation
+				for _, nodeID := range host.Asset.NodeIds {
+					relations = append(relations, Relation{
+						NodeID: nodeID, AssetID: host.AssetPtrID,
+					})
+				}
+				if txErr = tx.Table("assets_asset_nodes").
+					CreateInBatches(relations, 1000).Error; txErr != nil {
+					return txErr
+				}
+				return nil
+			})
+
+			if err != nil {
 				return nil, err
 			}
 
@@ -127,10 +147,19 @@ func (h *ResourcesHandler) getAssets(
 		"name":      true,
 		"is_active": true,
 	}
-	q := db.Model(&models.Asset{}).Preload("Platform").
-		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
-			return db.Select("id", "value", "full_value")
-		})
+
+	nodeID := c.Query("node_id")
+	if nodeID == "" {
+		nodeID = c.Query("node_id")
+	}
+
+	q := db.Debug().Model(&models.Asset{}).Preload("Platform")
+	if nodeID != "" {
+		q = q.Where("? IN (SELECT node_id FROM assets_asset_nodes WHERE asset_id = assets.id)", nodeID)
+	}
+	q.Preload("Nodes", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id", "value", "full_value")
+	})
 
 	if category != "" {
 		q = q.Joins("JOIN platforms ON platforms.id = assets.platform_id").
