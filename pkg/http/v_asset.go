@@ -8,23 +8,23 @@ import (
 	"middleman/pkg/database/models"
 )
 
-func (h *ResourcesHandler) savePlatform(c *gin.Context, db *gorm.DB) (err error) {
+func (h *ResourcesHandler) savePlatform(c *gin.Context) (err error) {
 	var platforms []models.Platform
 	if err = c.ShouldBindJSON(&platforms); err != nil {
 		return err
 	}
 	for _, platform := range platforms {
 		var count int64
-		if err = db.Model(platform).Where("id = ?", platform.ID).
+		if err = h.db.Model(platform).Where("id = ?", platform.ID).
 			Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
-			if err = db.Model(platform).Omit("id").Updates(&platform).Error; err != nil {
+			if err = h.db.Model(platform).Omit("id").Updates(&platform).Error; err != nil {
 				return err
 			}
 		} else {
-			if err = db.Create(&platform).Error; err != nil {
+			if err = h.db.Create(&platform).Error; err != nil {
 				return err
 			}
 		}
@@ -33,14 +33,14 @@ func (h *ResourcesHandler) savePlatform(c *gin.Context, db *gorm.DB) (err error)
 	return nil
 }
 
-func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, err error) {
+func (h *ResourcesHandler) saveHost(c *gin.Context) (ids []string, err error) {
 	var hosts []models.Host
 	if err = c.ShouldBindJSON(&hosts); err != nil {
 		return nil, err
 	}
 	for _, host := range hosts {
 		var count int64
-		if err = db.Model(host).Where("asset_ptr_id = ?", host.Asset.ID).
+		if err = h.db.Model(host).Where("asset_ptr_id = ?", host.Asset.ID).
 			Count(&count).Error; err != nil {
 			return nil, err
 		}
@@ -57,20 +57,25 @@ func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, 
 		host.Asset.Accounts = newAccounts
 
 		if count > 0 {
-			if err = db.Model(host).Omit("id").Updates(&host).Error; err != nil {
+			if err = h.db.Model(host).Omit("id").Updates(&host).Error; err != nil {
 				return nil, err
 			}
 		} else {
-			err = db.Transaction(func(tx *gorm.DB) error {
+			err = h.db.Transaction(func(tx *gorm.DB) error {
 				var txErr error
 
-				tx = tx.Clauses()
-				if txErr = tx.Debug().Create(&host.Asset).Error; txErr != nil {
+				var nameCount int64
+				if txErr = tx.Model(models.Asset{}).
+					Where("name = ? AND org_id = ?", host.Asset.Name, host.Asset.OrgID).
+					Limit(1).Count(&nameCount).Error; txErr != nil {
 					return txErr
 				}
 
-				newHost := models.Host{AssetPtrID: host.AssetPtrID}
-				if txErr = tx.Debug().Create(&newHost).Error; txErr != nil {
+				if nameCount > 0 {
+					return fmt.Errorf("name %s already exists", host.Asset.Name)
+				}
+
+				if txErr = tx.Create(&host).Error; txErr != nil {
 					return txErr
 				}
 
@@ -85,7 +90,7 @@ func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, 
 					})
 				}
 				if txErr = tx.Table("assets_asset_nodes").
-					CreateInBatches(relations, 1000).Error; txErr != nil {
+					CreateInBatches(relations, 100).Error; txErr != nil {
 					return txErr
 				}
 				return nil
@@ -105,9 +110,7 @@ func (h *ResourcesHandler) saveHost(c *gin.Context, db *gorm.DB) (ids []string, 
 	return ids, nil
 }
 
-func (h *ResourcesHandler) getPlatforms(
-	c *gin.Context, db *gorm.DB, limit, offset int,
-) (interface{}, int64, error) {
+func (h *ResourcesHandler) getPlatforms(c *gin.Context, limit, offset int) (interface{}, int64, error) {
 	var err error
 	var platforms []models.Platform
 	queryFields := map[string]bool{
@@ -115,7 +118,7 @@ func (h *ResourcesHandler) getPlatforms(
 		"type":     true,
 		"category": true,
 	}
-	q := db.Model(&models.Platform{})
+	q := h.db.Model(&models.Platform{})
 	for key, values := range c.Request.URL.Query() {
 		if h.processedParams[key] || !queryFields[key] {
 			continue
@@ -136,9 +139,7 @@ func (h *ResourcesHandler) getPlatforms(
 	return platforms, count, nil
 }
 
-func (h *ResourcesHandler) getAssets(
-	c *gin.Context, db *gorm.DB, limit, offset int, category string,
-) (interface{}, int64, error) {
+func (h *ResourcesHandler) getAssets(c *gin.Context, limit, offset int, category string) (interface{}, int64, error) {
 	var err error
 	var assets []models.Asset
 	queryFields := map[string]bool{
@@ -153,7 +154,7 @@ func (h *ResourcesHandler) getAssets(
 		nodeID = c.Query("node_id")
 	}
 
-	q := db.Debug().Model(&models.Asset{}).Preload("Platform")
+	q := h.db.Debug().Model(&models.Asset{}).Preload("Platform")
 	if nodeID != "" {
 		q = q.Where("? IN (SELECT node_id FROM assets_asset_nodes WHERE asset_id = assets.id)", nodeID)
 	}
@@ -210,7 +211,7 @@ func (h *ResourcesHandler) getAssets(
 	return newAssets, count, nil
 }
 
-func (h *ResourcesHandler) getAccounts(c *gin.Context, db *gorm.DB, limit, offset int) (interface{}, int64, error) {
+func (h *ResourcesHandler) getAccounts(c *gin.Context, limit, offset int) (interface{}, int64, error) {
 	var err error
 	var accounts []models.Account
 	queryFields := map[string]bool{
@@ -219,7 +220,7 @@ func (h *ResourcesHandler) getAccounts(c *gin.Context, db *gorm.DB, limit, offse
 		"username":    true,
 		"secret_type": true,
 	}
-	q := db.Model(&models.Account{}).Preload("Asset")
+	q := h.db.Model(&models.Account{}).Preload("Asset")
 	for key, values := range c.Request.URL.Query() {
 		if h.processedParams[key] || !queryFields[key] {
 			continue
@@ -240,8 +241,12 @@ func (h *ResourcesHandler) getAccounts(c *gin.Context, db *gorm.DB, limit, offse
 	return accounts, count, nil
 }
 
-func (h *ResourcesHandler) deleteAsset(id string, db *gorm.DB) (err error) {
-	if err = db.Where("id = ?", id).Delete(&models.Asset{}).Error; err != nil {
+func (h *ResourcesHandler) deleteAsset(id string) (err error) {
+	if err = h.db.Where("id = ?", id).Delete(&models.Asset{}).Error; err != nil {
+		return err
+	}
+	err = h.jmsClient.RemoveAsset(id)
+	if err != nil {
 		return err
 	}
 	return nil

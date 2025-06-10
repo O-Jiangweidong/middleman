@@ -31,11 +31,12 @@ func NewHttpServer() *HttpServer {
 	g.Use(middleware.AccessKeyMiddleware())
 	g.GET("slave-nodes/", getSlaveNodes)
 
+	g.DELETE("resources/:id/", deleteResource)
+
 	g.Use(middleware.DatabaseMiddleware())
 	g.GET("resources/", getResources)
 	g.POST("resources/", saveResources)
 	g.PATCH("resources/:id/", updateResources)
-	g.DELETE("resources/:id/", deleteResources)
 
 	return &HttpServer{
 		server: &http.Server{

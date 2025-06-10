@@ -9,7 +9,7 @@ import (
 	"middleman/pkg/database/models"
 )
 
-func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (ids []string, err error) {
+func (h *ResourcesHandler) saveUser(c *gin.Context) (ids []string, err error) {
 	var users []models.User
 	if err = c.ShouldBindJSON(&users); err != nil {
 		return nil, err
@@ -26,7 +26,7 @@ func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (ids []string, 
 
 		var roles []models.RbacRole
 		if len(roleIds) > 0 {
-			db.Model(&roles).Where("id IN ?", roleIds).Find(&roles)
+			h.db.Model(&roles).Where("id IN ?", roleIds).Find(&roles)
 		}
 		user.Roles = roles
 		jmsUser := user.ToJMSUser()
@@ -44,20 +44,20 @@ func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (ids []string, 
 
 		var groups []models.UserGroup
 		if len(groupIds) > 0 {
-			db.Model(&groups).Where("id IN ?", groupIds).Find(&groups)
+			h.db.Model(&groups).Where("id IN ?", groupIds).Find(&groups)
 		}
 		user.UserGroups = groups
 
 		var count int64
-		if err = db.Model(user).Where("id = ?", user.ID).Count(&count).Error; err != nil {
+		if err = h.db.Model(user).Where("id = ?", user.ID).Count(&count).Error; err != nil {
 			return nil, err
 		}
 		if count > 0 {
-			if err = db.Model(user).Omit("id").Updates(&user).Error; err != nil {
+			if err = h.db.Model(user).Omit("id").Updates(&user).Error; err != nil {
 				return nil, err
 			}
 		} else {
-			err = db.Transaction(func(tx *gorm.DB) error {
+			err = h.db.Transaction(func(tx *gorm.DB) error {
 				if err = tx.Create(&user).Error; err != nil {
 					tx.Rollback()
 					return err
@@ -81,22 +81,22 @@ func (h *ResourcesHandler) saveUser(c *gin.Context, db *gorm.DB) (ids []string, 
 	return ids, nil
 }
 
-func (h *ResourcesHandler) saveRole(c *gin.Context, db *gorm.DB) (err error) {
+func (h *ResourcesHandler) saveRole(c *gin.Context) (err error) {
 	var roles []models.RbacRole
 	if err = c.ShouldBindJSON(&roles); err != nil {
 		return err
 	}
 	for _, role := range roles {
 		var count int64
-		if err = db.Model(role).Where("id = ?", role.ID).Count(&count).Error; err != nil {
+		if err = h.db.Model(role).Where("id = ?", role.ID).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
-			if err = db.Model(role).Omit("id").Updates(&role).Error; err != nil {
+			if err = h.db.Model(role).Omit("id").Updates(&role).Error; err != nil {
 				return err
 			}
 		} else {
-			if err = db.Create(&role).Error; err != nil {
+			if err = h.db.Create(&role).Error; err != nil {
 				return err
 			}
 		}
@@ -104,22 +104,22 @@ func (h *ResourcesHandler) saveRole(c *gin.Context, db *gorm.DB) (err error) {
 	return nil
 }
 
-func (h *ResourcesHandler) saveUserGroup(c *gin.Context, db *gorm.DB) (ids []string, err error) {
+func (h *ResourcesHandler) saveUserGroup(c *gin.Context) (ids []string, err error) {
 	var userGroups []models.UserGroup
 	if err = c.ShouldBindJSON(&userGroups); err != nil {
 		return nil, err
 	}
 	for _, group := range userGroups {
 		var count int64
-		if err = db.Model(group).Where("id = ?", group.ID).Count(&count).Error; err != nil {
+		if err = h.db.Model(group).Where("id = ?", group.ID).Count(&count).Error; err != nil {
 			return nil, err
 		}
 		if count > 0 {
-			if err = db.Model(group).Omit("id").Updates(&group).Error; err != nil {
+			if err = h.db.Model(group).Omit("id").Updates(&group).Error; err != nil {
 				return nil, err
 			}
 		} else {
-			if err = db.Create(&group).Error; err != nil {
+			if err = h.db.Create(&group).Error; err != nil {
 				return nil, err
 			}
 			ids = append(ids, group.ID)
@@ -129,7 +129,7 @@ func (h *ResourcesHandler) saveUserGroup(c *gin.Context, db *gorm.DB) (ids []str
 	return ids, nil
 }
 
-func (h *ResourcesHandler) getUsers(c *gin.Context, db *gorm.DB, limit, offset int) (interface{}, int64, error) {
+func (h *ResourcesHandler) getUsers(c *gin.Context, limit, offset int) (interface{}, int64, error) {
 	var err error
 	var users []models.User
 	queryFields := map[string]bool{
@@ -140,7 +140,7 @@ func (h *ResourcesHandler) getUsers(c *gin.Context, db *gorm.DB, limit, offset i
 		"source":    true,
 		"is_active": true,
 	}
-	q := db.Model(&models.User{}).Preload("Roles").Preload("UserGroups")
+	q := h.db.Model(&models.User{}).Preload("Roles").Preload("UserGroups")
 	for key, values := range c.Request.URL.Query() {
 		if h.processedParams[key] || !queryFields[key] {
 			continue
@@ -184,4 +184,12 @@ func (h *ResourcesHandler) getUsers(c *gin.Context, db *gorm.DB, limit, offset i
 		})
 	}
 	return newUsers, count, nil
+}
+
+func (h *ResourcesHandler) unblockUser(id string) error {
+	return h.jmsClient.UnblockUser(id)
+}
+
+func (h *ResourcesHandler) resetUserMFA(id string) error {
+	return h.jmsClient.ResetUserMFA(id)
 }

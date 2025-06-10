@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"middleman/pkg/consts"
 	"net/http"
 	"strings"
 
@@ -40,11 +41,11 @@ func AccessKeyMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		var count int64
+		var server mm.JumpServer
 		db := database.GetDBManager().GetDefaultDB()
 		err := db.Model(&mm.JumpServer{}).
 			Where("access_key = ? AND secret_key = ?", credentials[0], credentials[1]).
-			Count(&count).Error
+			Find(&server).Error
 
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
@@ -53,13 +54,14 @@ func AccessKeyMiddleware() gin.HandlerFunc {
 			})
 			return
 		}
-		if count <= 0 {
+		if server.Name == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": "Invalid access key or secret key",
 				"code":  40105,
 			})
 			return
 		}
+		c.Set(consts.AuthDBInfoContextKey, server)
 		c.Next()
 	}
 }

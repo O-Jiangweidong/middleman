@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type AssetPermission struct {
 	ID          string      `json:"id" gorm:"type:uuid;primaryKey"`
 	Name        string      `json:"name" gorm:"type:varchar(128);not null"`
@@ -27,10 +29,19 @@ type AssetPermission struct {
 	AssetIds       []string `json:"asset_ids,omitempty" gorm:"-"`
 	NodeIds        []string `json:"node_ids,omitempty" gorm:"-"`
 	ActionsDisplay []string `json:"actions_display,omitempty" gorm:"-"`
+	Valid          bool     `json:"is_valid" gorm:"-"`
 }
 
 func (AssetPermission) TableName() string {
 	return "perms_assetpermission"
+}
+
+func (p AssetPermission) IsValid() bool {
+	now := time.Now().UTC()
+	if p.DateExpired.After(now) && p.DateStart.Before(now) && p.IsActive {
+		return true
+	}
+	return false
 }
 
 type JmsAssetPermission struct {

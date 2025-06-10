@@ -3,7 +3,6 @@ package pkg
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	"strconv"
 	"strings"
 
@@ -36,7 +35,7 @@ type TreeNode struct {
 	Meta     TreeNodeMeta `json:"meta"`
 }
 
-func (h *ResourcesHandler) getNodes(c *gin.Context, db *gorm.DB, limit, offset int) (interface{}, int64, error) {
+func (h *ResourcesHandler) getNodes(c *gin.Context, limit, offset int) (interface{}, int64, error) {
 	var err error
 	var nodes []models.Node
 	queryFields := map[string]bool{
@@ -46,7 +45,7 @@ func (h *ResourcesHandler) getNodes(c *gin.Context, db *gorm.DB, limit, offset i
 		"parent_key": true,
 		"full_value": true,
 	}
-	q := db.Model(&models.Node{})
+	q := h.db.Model(&models.Node{})
 	for key, values := range c.Request.URL.Query() {
 		if h.processedParams[key] || !queryFields[key] {
 			continue
@@ -67,11 +66,11 @@ func (h *ResourcesHandler) getNodes(c *gin.Context, db *gorm.DB, limit, offset i
 	return nodes, count, nil
 }
 
-func (h *ResourcesHandler) getChildrenNodes(c *gin.Context, db *gorm.DB) (interface{}, int64, error) {
+func (h *ResourcesHandler) getChildrenNodes(c *gin.Context) (interface{}, int64, error) {
 	var err error
 	var nodes []models.Node
 
-	q := db.Model(&models.Node{})
+	q := h.db.Model(&models.Node{})
 	searchFields := []string{"value", "full_value"}
 	q = h.handleSearch(c, q, searchFields)
 
@@ -102,7 +101,7 @@ func (h *ResourcesHandler) getChildrenNodes(c *gin.Context, db *gorm.DB) (interf
 	return newNodes, -1, nil
 }
 
-func (h *ResourcesHandler) updateNode(c *gin.Context, db *gorm.DB, id string) (err error) {
+func (h *ResourcesHandler) updateNode(c *gin.Context, id string) (err error) {
 	type reqNode struct {
 		Value string `json:"value" binding:"required"`
 	}
@@ -111,15 +110,18 @@ func (h *ResourcesHandler) updateNode(c *gin.Context, db *gorm.DB, id string) (e
 		return err
 	}
 
-	if err = db.Debug().Model(models.Node{}).Where("id = ?", id).
+	if err = h.db.Debug().Model(models.Node{}).Where("id = ?", id).
 		Update("value", req.Value).Error; err != nil {
 		return err
 	}
-	h.jmsClient.UpdateNode(id, req)
+	err = h.jmsClient.UpdateNode(id, req)
+	if err != nil {
+		return err
+	}
 	return
 }
 
-func (h *ResourcesHandler) saveChildrenNode(c *gin.Context, db *gorm.DB) (ids []string, err error) {
+func (h *ResourcesHandler) saveChildrenNode(c *gin.Context) (ids []string, err error) {
 	type reqNode struct {
 		ID        string `json:"id"`
 		Value     string `json:"value"`
@@ -133,12 +135,12 @@ func (h *ResourcesHandler) saveChildrenNode(c *gin.Context, db *gorm.DB) (ids []
 
 	for _, node := range nodes {
 		var pNode models.Node
-		if err = db.Model(pNode).Where("id = ?", node.ParentID).Find(&pNode).Error; err != nil {
+		if err = h.db.Model(pNode).Where("id = ?", node.ParentID).Find(&pNode).Error; err != nil {
 			return nil, err
 		}
 
 		var cNodes []models.Node
-		if err = db.Model(pNode).Where("parent_key = ?", pNode.Key).Find(&cNodes).Error; err != nil {
+		if err = h.db.Model(pNode).Where("parent_key = ?", pNode.Key).Find(&cNodes).Error; err != nil {
 			return nil, err
 		}
 
@@ -186,7 +188,7 @@ func (h *ResourcesHandler) saveChildrenNode(c *gin.Context, db *gorm.DB) (ids []
 			Comment:      "",
 			CreatedBy:    node.CreatedBy,
 		}
-		if err = db.Create(&cNode).Error; err != nil {
+		if err = h.db.Create(&cNode).Error; err != nil {
 			return nil, err
 		}
 
@@ -199,23 +201,23 @@ func (h *ResourcesHandler) saveChildrenNode(c *gin.Context, db *gorm.DB) (ids []
 	return ids, nil
 }
 
-func (h *ResourcesHandler) saveNode(c *gin.Context, db *gorm.DB) (err error) {
+func (h *ResourcesHandler) saveNode(c *gin.Context) (err error) {
 	var nodes []models.Node
 	if err = c.ShouldBindJSON(&nodes); err != nil {
 		return err
 	}
 	for _, node := range nodes {
 		var count int64
-		if err = db.Model(node).Where("id = ?", node.ID).Count(&count).Error; err != nil {
+		if err = h.db.Model(node).Where("id = ?", node.ID).Count(&count).Error; err != nil {
 			return err
 		}
 
 		if count > 0 {
-			if err = db.Model(node).Omit("id").Updates(&node).Error; err != nil {
+			if err = h.db.Model(node).Omit("id").Updates(&node).Error; err != nil {
 				return err
 			}
 		} else {
-			if err = db.Create(&node).Error; err != nil {
+			if err = h.db.Create(&node).Error; err != nil {
 				return err
 			}
 		}
@@ -223,7 +225,7 @@ func (h *ResourcesHandler) saveNode(c *gin.Context, db *gorm.DB) (err error) {
 	return nil
 }
 
-func (h *ResourcesHandler) assetNodeRelation(c *gin.Context, db *gorm.DB) (err error) {
+func (h *ResourcesHandler) assetNodeRelation(c *gin.Context) (err error) {
 	var req struct {
 		Action   string   `json:"action" binding:"required"`
 		NodeID   string   `json:"node_id"`
@@ -238,11 +240,30 @@ func (h *ResourcesHandler) assetNodeRelation(c *gin.Context, db *gorm.DB) (err e
 	}
 	jmsReq.AssetIds = req.AssetIds
 
+	var nodeCount int64
+	err = h.db.Model(models.Node{}).Where("id = ?", req.NodeID).Limit(1).Count(&nodeCount).Error
+	if err != nil {
+		return err
+	}
+	if nodeCount != 1 {
+		return fmt.Errorf("node does not exist")
+	}
+
+	var assetsCount int64
+	err = h.db.Model(models.Asset{}).Where("id IN ?", jmsReq.AssetIds).Count(&assetsCount).Error
+	if err != nil {
+		return err
+	}
+
+	if assetsCount != int64(len(jmsReq.AssetIds)) {
+		return fmt.Errorf("there are illegal ID in param assets")
+	}
+
 	if req.Action == "add" {
 		var existingRelations []struct {
 			AssetID string `gorm:"column:asset_id"`
 		}
-		if err = db.Raw(
+		if err = h.db.Raw(
 			`SELECT asset_id FROM assets_asset_nodes WHERE node_id = ? AND asset_id IN (?)`,
 			req.NodeID, req.AssetIds).Scan(&existingRelations).Error; err != nil {
 			return err
@@ -253,31 +274,43 @@ func (h *ResourcesHandler) assetNodeRelation(c *gin.Context, db *gorm.DB) (err e
 			existingMap[rel.AssetID] = true
 		}
 
-		var newRelations []map[string]string
+		type AssetNodeRelation struct {
+			NodeID  string `gorm:"column:node_id"`
+			AssetID string `gorm:"column:asset_id"`
+		}
+		var newRelations []AssetNodeRelation
 		for _, assetID := range req.AssetIds {
 			if !existingMap[assetID] {
-				newRelations = append(newRelations, map[string]string{
-					"node_id": req.NodeID, "asset_id": assetID,
+				newRelations = append(newRelations, AssetNodeRelation{
+					NodeID: req.NodeID, AssetID: assetID,
 				})
 			}
 		}
 
 		if len(newRelations) > 0 {
-			return db.Table("assets_asset_nodes").
-				CreateInBatches(newRelations, 100).Error
+			err = h.db.Table("assets_asset_nodes").CreateInBatches(&newRelations, 100).Error
+			if err != nil {
+				return err
+			}
+
+			err = h.jmsClient.NodeWithAssetsRelation("add", req.NodeID, jmsReq)
+			if err != nil {
+				return err
+			}
 		}
 
-		return h.jmsClient.NodeWithAssetsRelation("add", req.NodeID, jmsReq)
-
 	} else if req.Action == "remove" {
-		err = db.Exec(
+		err = h.db.Exec(
 			"DELETE FROM assets_asset_nodes WHERE node_id = ? AND asset_id IN (?)",
 			req.NodeID, req.AssetIds).Error
 		if err != nil {
 			return err
 		}
 
-		return h.jmsClient.NodeWithAssetsRelation("remove", req.NodeID, jmsReq)
+		err = h.jmsClient.NodeWithAssetsRelation("remove", req.NodeID, jmsReq)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

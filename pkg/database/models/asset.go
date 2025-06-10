@@ -115,7 +115,7 @@ func (a Asset) ToJms() JmsAsset {
 		accounts = append(accounts, account)
 	}
 	a.Accounts = accounts
-	return JmsAsset{Asset: a}
+	return JmsAsset{Asset: a, NodeIds: a.NodeIds}
 }
 
 type Web struct {

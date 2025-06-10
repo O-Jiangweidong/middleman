@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -35,6 +36,8 @@ const (
 	Organization  = "organization"
 	Role          = "role"
 	UserGroup     = "user_group"
+	UserUnblock   = "user_unblock"
+	UserResetMFA  = "user_reset_mfa"
 )
 
 type RegisterRequest struct {
@@ -129,17 +132,16 @@ func getSlaveNodes(c *gin.Context) {
 }
 
 func getResources(c *gin.Context) {
-	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
 	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
 	fmt.Println("DB Name:", dbInfo.Name)
-	if db == nil {
+
+	handle, err := newResourcesHandler(dbInfo)
+	if err != nil {
 		c.JSON(http.StatusPreconditionFailed, gin.H{
-			"error": "Database not found", "details": "Database not found",
+			"error": "Database init failed", "details": "Database init failed",
 		})
 		return
 	}
-
-	handle := newResourcesHandler(dbInfo)
 	handle.processedParams = map[string]bool{
 		"offset": true, "limit": true, "m_type": true, "search": true,
 	}
@@ -163,21 +165,21 @@ func getResources(c *gin.Context) {
 	resourceType := c.Query("m_type")
 	switch resourceType {
 	case User:
-		resources, count, err = handle.getUsers(c, db, limit, offset)
+		resources, count, err = handle.getUsers(c, limit, offset)
 	case Platform:
-		resources, count, err = handle.getPlatforms(c, db, limit, offset)
+		resources, count, err = handle.getPlatforms(c, limit, offset)
 	case Asset:
-		resources, count, err = handle.getAssets(c, db, limit, offset, "")
-	case Host, Web, Device, Database, Custom, Gpt:
-		resources, count, err = handle.getAssets(c, db, limit, offset, resourceType)
+		resources, count, err = handle.getAssets(c, limit, offset, "")
+	case Host, Web, Device, Database, Custom, Gpt, Cloud:
+		resources, count, err = handle.getAssets(c, limit, offset, resourceType)
 	case Account:
-		resources, count, err = handle.getAccounts(c, db, limit, offset)
+		resources, count, err = handle.getAccounts(c, limit, offset)
 	case Permission:
-		resources, count, err = handle.getPerms(c, db, limit, offset)
+		resources, count, err = handle.getPerms(c, limit, offset)
 	case Node:
-		resources, count, err = handle.getNodes(c, db, limit, offset)
+		resources, count, err = handle.getNodes(c, limit, offset)
 	case ChildrenNode:
-		resources, count, err = handle.getChildrenNodes(c, db)
+		resources, count, err = handle.getChildrenNodes(c)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",
@@ -203,6 +205,8 @@ func getResources(c *gin.Context) {
 
 type ResourcesHandler struct {
 	jmsClient *utils.JumpServer
+	db        *gorm.DB
+	dbName    string
 
 	processedParams map[string]bool
 }
@@ -222,49 +226,51 @@ func (h *ResourcesHandler) handleSearch(c *gin.Context, q *gorm.DB, searchFields
 	return q
 }
 
-func newResourcesHandler(dbInfo models.JumpServer) *ResourcesHandler {
+func newResourcesHandler(dbInfo models.JumpServer) (*ResourcesHandler, error) {
+	db, err := database.GetDBManager().GetDB(string(dbInfo.Name))
+	if err != nil {
+		return nil, err
+	}
 	return &ResourcesHandler{
 		jmsClient: utils.NewJumpServer(dbInfo.Endpoint, dbInfo.PrivateToken),
-	}
+		db:        db, dbName: string(dbInfo.Name),
+	}, nil
 }
 
 func saveResources(c *gin.Context) {
-	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
+	var err error
 	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
 	cache := utils.GetCache()
 
-	handler := newResourcesHandler(dbInfo)
-
-	if db == nil || dbInfo.Name == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Database not found", "details": "Database not found",
+	handler, err := newResourcesHandler(dbInfo)
+	if err != nil {
+		c.JSON(http.StatusPreconditionFailed, gin.H{
+			"error": "Database init failed", "details": "Database init failed",
 		})
 		return
 	}
 
 	resourceType := c.Query("m_type")
-
-	var err error
 	var ids []string
 	switch resourceType {
 	case User:
-		ids, err = handler.saveUser(c, db)
+		ids, err = handler.saveUser(c)
 	case Role:
-		err = handler.saveRole(c, db)
+		err = handler.saveRole(c)
 	case UserGroup:
-		ids, err = handler.saveUserGroup(c, db)
+		ids, err = handler.saveUserGroup(c)
 	case Platform:
-		err = handler.savePlatform(c, db)
+		err = handler.savePlatform(c)
 	case Host:
-		ids, err = handler.saveHost(c, db)
+		ids, err = handler.saveHost(c)
 	case Permission:
-		ids, err = handler.savePerm(c, db)
+		ids, err = handler.savePerm(c)
 	case ChildrenNode:
-		ids, err = handler.saveChildrenNode(c, db)
+		ids, err = handler.saveChildrenNode(c)
 	case Node:
-		err = handler.saveNode(c, db)
+		err = handler.saveNode(c)
 	case NodeWithAsset:
-		err = handler.assetNodeRelation(c, db)
+		err = handler.assetNodeRelation(c)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",
@@ -282,7 +288,7 @@ func saveResources(c *gin.Context) {
 	}
 
 	for _, id := range ids {
-		_ = cache.Set(fmt.Sprintf("%s-%s", resourceType, id), true, 0)
+		_ = cache.Set(fmt.Sprintf("%s-%s", resourceType, id), "", 0)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -291,25 +297,26 @@ func saveResources(c *gin.Context) {
 }
 
 func updateResources(c *gin.Context) {
-	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
+	var err error
+
 	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
-
-	handler := newResourcesHandler(dbInfo)
-
-	if db == nil || dbInfo.Name == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Database not found", "details": "Database not found",
+	handler, err := newResourcesHandler(dbInfo)
+	if err != nil {
+		c.JSON(http.StatusPreconditionFailed, gin.H{
+			"error": "Database init failed", "details": "Database init failed",
 		})
 		return
 	}
 
 	resourceType := c.Query("m_type")
-
-	var err error
 	id := c.Param("id")
 	switch resourceType {
 	case Node:
-		err = handler.updateNode(c, db, id)
+		err = handler.updateNode(c, id)
+	case UserUnblock:
+		err = handler.unblockUser(id)
+	case UserResetMFA:
+		err = handler.resetUserMFA(id)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",
@@ -331,29 +338,19 @@ func updateResources(c *gin.Context) {
 	})
 }
 
-func deleteResources(c *gin.Context) {
-	// TODO 后边 context 中没有 db，需要从缓存中判断走那个
-	db := c.MustGet(consts.DBContextKey).(*gorm.DB)
-	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
-	//cache := utils.GetCache()
-	handler := newResourcesHandler(dbInfo)
+func deleteResource(c *gin.Context) {
+	var err error
+	var dbName string
+	var handler *ResourcesHandler
+	var handlers []*ResourcesHandler
 
-	if db == nil || dbInfo.Name == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Database not found", "details": "Database not found",
-		})
-		return
+	validResourceTypes := map[string]bool{
+		Permission: true,
+		Asset:      true,
 	}
 
 	resourceType := c.Query("m_type")
-	id := c.Param("id")
-	var err error
-	switch resourceType {
-	case Permission:
-		err = handler.deletePerm(id, db)
-	case Asset:
-		err = handler.deleteAsset(id, db)
-	default:
+	if !validResourceTypes[resourceType] {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request type",
 			"details": fmt.Sprintf("Invalid request type: %s", resourceType),
@@ -361,15 +358,56 @@ func deleteResources(c *gin.Context) {
 		return
 	}
 
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   fmt.Sprintf("Failed to delete resource: %v", err.Error()),
-			"details": "Database operation failed",
-		})
-		return
+	cache := utils.GetCache()
+	id := c.Param("id")
+	cacheKey := fmt.Sprintf("%s-%s", resourceType, id)
+	err = cache.Get(cacheKey, &dbName)
+	defaultDB := database.GetDBManager().GetDefaultDB()
+	if err != nil || dbName == "" {
+		var servers []models.JumpServer
+		defaultDB.Model(models.JumpServer{}).Where("role = ?", models.RoleSlave).Find(&servers)
+		for _, server := range servers {
+			handler, err = newResourcesHandler(server)
+			if err != nil {
+				c.JSON(http.StatusPreconditionFailed, gin.H{
+					"error": "Database init failed", "details": "Database init failed",
+				})
+				return
+			}
+			handlers = append(handlers, handler)
+		}
+	} else {
+		var server models.JumpServer
+		defaultDB.Model(models.JumpServer{}).Where("name = ?", dbName).Find(&server)
+		handler, err = newResourcesHandler(server)
+		if err != nil {
+			c.JSON(http.StatusPreconditionFailed, gin.H{
+				"error": "Database init failed", "details": "Database init failed",
+			})
+			return
+		}
+		handlers = append(handlers, handler)
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
+	go func(handlers []*ResourcesHandler, cacheKey string, cache *utils.CacheManager) {
+		for _, handler = range handlers {
+			switch resourceType {
+			case Permission:
+				err = handler.deletePerm(id)
+			case Asset:
+				err = handler.deleteAsset(id)
+			}
+			if errors.Is(err, consts.NotFoundError) {
+				continue
+			} else if err == nil {
+				_ = cache.Delete(cacheKey)
+				break
+			} else {
+				// TODO 记录报错，等待轮回程序执行,这里后续写
+			}
+		}
+	}(handlers, cacheKey, cache)
+	c.JSON(http.StatusAccepted, gin.H{
 		"message": fmt.Sprintf("Resource[%s] deleted successfully", resourceType),
 	})
 }
