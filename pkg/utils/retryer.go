@@ -188,7 +188,7 @@ func (rm *RetryManager) retryWorker(ctx context.Context) {
 	ticker := time.NewTicker(rm.checkInterval)
 	defer ticker.Stop()
 
-	rm.logger.Info("Start retry-worker.")
+	rm.logger.Debug("Start worker [retryer]")
 
 	for {
 		select {
@@ -215,6 +215,7 @@ func (rm *RetryManager) checkAndRetryRequests() {
 	}
 
 	for _, req := range requests {
+		rm.retryRequest(&req)
 		if req.RetryCount >= req.MaxRetries {
 			// TODO 到达最大该如何处理
 			rm.archiveFailedRequest(req)
@@ -225,7 +226,7 @@ func (rm *RetryManager) checkAndRetryRequests() {
 	rm.isFinished = true
 }
 
-func (rm *RetryManager) retryRequest(req RequestInfo) {
+func (rm *RetryManager) retryRequest(req *RequestInfo) {
 	rm.logger.Info(fmt.Sprintf("Retry request: %s %s (%d times)",
 		req.Method, req.URL, req.RetryCount+1))
 
@@ -246,7 +247,7 @@ func (rm *RetryManager) retryRequest(req RequestInfo) {
 		req.AttemptTimes = append(req.AttemptTimes, req.LastAttempt)
 		rm.logger.Info(fmt.Sprintf("Retry request failed: %s %s (%d times)",
 			req.Method, req.URL, req.RetryCount))
-		rm.storage.Save(req)
+		rm.storage.Save(*req)
 		return
 	}
 	defer resp.Body.Close()
@@ -260,12 +261,12 @@ func (rm *RetryManager) retryRequest(req RequestInfo) {
 
 		rm.logger.Info(fmt.Sprintf("Retry request failed: %s %s (%d times)",
 			req.Method, req.URL, req.RetryCount))
-		rm.storage.Save(req)
+		rm.storage.Save(*req)
 		return
 	}
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		err = rm.storage.Delete(req)
+	if (resp.StatusCode >= 200 && resp.StatusCode < 300) || resp.StatusCode == 404 {
+		err = rm.storage.Delete(*req)
 		if err != nil {
 			rm.logger.Error("Request %s delete failed.", req.URL)
 		} else {
@@ -280,7 +281,7 @@ func (rm *RetryManager) retryRequest(req RequestInfo) {
 
 		rm.logger.Info(fmt.Sprintf("Retry request failed: %s %s (%d times)",
 			req.Method, req.URL, req.RetryCount))
-		rm.storage.Save(req)
+		rm.storage.Save(*req)
 	}
 }
 

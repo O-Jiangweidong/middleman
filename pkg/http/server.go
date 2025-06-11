@@ -42,7 +42,7 @@ func NewHttpServer() *HttpServer {
 
 	return &HttpServer{
 		server: &http.Server{
-			Addr:    fmt.Sprintf(":%v", conf.Port),
+			Addr:    fmt.Sprintf(":%v", conf.ListenPort),
 			Handler: r,
 		},
 		router: r,

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"middleman/pkg/config"
 )
 
 type Level int
@@ -30,7 +32,6 @@ var levelStrings = map[Level]string{
 var (
 	GlobalLogger *Logger
 	once         sync.Once
-	logPath      = "middleman.log"
 )
 
 type Logger struct {
@@ -124,7 +125,21 @@ func (l *Logger) Fatal(format string, args ...interface{}) {
 
 func init() {
 	once.Do(func() {
-		logger, err := New("logs/middleman.log", LevelDebug)
+		var level Level
+		conf := config.GetConf()
+		switch conf.LogLevel {
+		case "debug":
+			level = 0
+		case "info":
+			level = 1
+		case "warning":
+			level = 2
+		case "error":
+			level = 3
+		default:
+			level = 4
+		}
+		logger, err := New("logs/middleman.log", level)
 		if err != nil {
 			fmt.Printf("无法创建日志记录器: %v\n", err)
 			return
