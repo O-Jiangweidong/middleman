@@ -136,6 +136,7 @@ func (jms *JumpServer) Delete(url string) error {
 		return fmt.Errorf("delete failed，status code: %d, body: %s",
 			resp.StatusCode, string(body))
 	}
+	// TODO 这里删除成功要把缓存内容同步清除
 	return nil
 }
 

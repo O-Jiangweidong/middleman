@@ -137,7 +137,7 @@ func (c *CacheManager) Close() error {
 }
 
 func GetCache() *CacheManager {
-	cache, err := newCacheManager("data")
+	cache, err := newCacheManager("data/cache")
 	if err != nil {
 		log.Fatal("Init cache component failed.")
 	}

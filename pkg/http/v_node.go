@@ -110,15 +110,12 @@ func (h *ResourcesHandler) updateNode(c *gin.Context, id string) (err error) {
 		return err
 	}
 
-	if err = h.db.Debug().Model(models.Node{}).Where("id = ?", id).
+	if err = h.db.Model(models.Node{}).Where("id = ?", id).
 		Update("value", req.Value).Error; err != nil {
 		return err
 	}
-	err = h.jmsClient.UpdateNode(id, req)
-	if err != nil {
-		return err
-	}
-	return
+	go h.jmsClient.UpdateNode(id, req)
+	return nil
 }
 
 func (h *ResourcesHandler) saveChildrenNode(c *gin.Context) (ids []string, err error) {
@@ -192,11 +189,8 @@ func (h *ResourcesHandler) saveChildrenNode(c *gin.Context) (ids []string, err e
 			return nil, err
 		}
 
-		if err = h.jmsClient.CreateChildrenNode(cNode.ToJMS(node.ParentID)); err != nil {
-			return nil, err
-		}
-
 		ids = append(ids, node.ID)
+		go h.jmsClient.CreateChildrenNode(cNode.ToJMS(node.ParentID))
 	}
 	return ids, nil
 }
@@ -293,10 +287,7 @@ func (h *ResourcesHandler) assetNodeRelation(c *gin.Context) (err error) {
 				return err
 			}
 
-			err = h.jmsClient.NodeWithAssetsRelation("add", req.NodeID, jmsReq)
-			if err != nil {
-				return err
-			}
+			go h.jmsClient.NodeWithAssetsRelation("add", req.NodeID, jmsReq)
 		}
 
 	} else if req.Action == "remove" {
@@ -307,10 +298,7 @@ func (h *ResourcesHandler) assetNodeRelation(c *gin.Context) (err error) {
 			return err
 		}
 
-		err = h.jmsClient.NodeWithAssetsRelation("remove", req.NodeID, jmsReq)
-		if err != nil {
-			return err
-		}
+		go h.jmsClient.NodeWithAssetsRelation("remove", req.NodeID, jmsReq)
 	}
 	return nil
 }

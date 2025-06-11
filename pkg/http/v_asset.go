@@ -95,15 +95,12 @@ func (h *ResourcesHandler) saveHost(c *gin.Context) (ids []string, err error) {
 				}
 				return nil
 			})
-
 			if err != nil {
 				return nil, err
 			}
 
-			if err = h.jmsClient.CreateAsset(host); err != nil {
-				return nil, err
-			}
 			ids = append(ids, host.AssetPtrID)
+			go h.jmsClient.CreateAsset(host)
 		}
 	}
 
@@ -242,12 +239,10 @@ func (h *ResourcesHandler) getAccounts(c *gin.Context, limit, offset int) (inter
 }
 
 func (h *ResourcesHandler) deleteAsset(id string) (err error) {
-	if err = h.db.Where("id = ?", id).Delete(&models.Asset{}).Error; err != nil {
-		return err
-	}
-	err = h.jmsClient.RemoveAsset(id)
+	err = h.db.Where("id = ?", id).Delete(&models.Asset{}).Error
 	if err != nil {
 		return err
 	}
+	go h.jmsClient.RemoveAsset(id)
 	return nil
 }

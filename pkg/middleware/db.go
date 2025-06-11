@@ -12,14 +12,16 @@ import (
 
 func DatabaseMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		server := c.MustGet(consts.AuthDBInfoContextKey).(mm.JumpServer)
-		if server.Role == mm.RoleMaster {
+		var server, authServer mm.JumpServer
+		authServer = c.MustGet(consts.AuthDBInfoContextKey).(mm.JumpServer)
+		if authServer.Role == mm.RoleMaster {
 			dbName := c.GetHeader("SLAVE-NAME")
 			defaultDB := database.GetDBManager().GetDefaultDB()
 			defaultDB.Model(&mm.JumpServer{}).
 				Where("name = ? AND role = ?", dbName, mm.RoleSlave).Find(&server)
+		} else {
+			server = authServer
 		}
-
 		if server.Name == "" {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"error": fmt.Sprintf("Invalid branch node name"),

@@ -51,10 +51,8 @@ func (h *ResourcesHandler) savePerm(c *gin.Context) (ids []string, err error) {
 			if err = h.db.Create(&perm).Error; err != nil {
 				return nil, err
 			}
-			if err = h.jmsClient.CreatePerm(perm.ToJms()); err != nil {
-				return nil, err
-			}
 			ids = append(ids, perm.ID)
+			go h.jmsClient.CreatePerm(perm.ToJms())
 		}
 	}
 
@@ -101,8 +99,15 @@ func (h *ResourcesHandler) deletePerm(id string) (err error) {
 	if err != nil {
 		return err
 	}
-	err = h.jmsClient.DeletePerm(id)
-	if err != nil {
+	go h.jmsClient.DeletePerm(id)
+	return nil
+}
+
+func (h *ResourcesHandler) updatePerm(c *gin.Context, id string) (err error) {
+	type reqPerm struct {
+	}
+	var req reqPerm
+	if err = c.ShouldBindJSON(&req); err != nil {
 		return err
 	}
 	return nil

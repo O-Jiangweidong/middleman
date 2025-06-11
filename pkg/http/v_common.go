@@ -1,7 +1,6 @@
 package pkg
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -258,7 +257,7 @@ func saveResources(c *gin.Context) {
 	case Role:
 		err = handler.saveRole(c)
 	case UserGroup:
-		ids, err = handler.saveUserGroup(c)
+		err = handler.saveUserGroup(c)
 	case Platform:
 		err = handler.savePlatform(c)
 	case Host:
@@ -299,6 +298,21 @@ func saveResources(c *gin.Context) {
 func updateResources(c *gin.Context) {
 	var err error
 
+	validResourceTypes := map[string]bool{
+		Node:         true,
+		UserUnblock:  true,
+		UserResetMFA: true,
+		Permission:   true,
+	}
+	resourceType := c.Query("m_type")
+	if !validResourceTypes[resourceType] {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request type",
+			"details": fmt.Sprintf("Invalid request type: %s", resourceType),
+		})
+		return
+	}
+
 	dbInfo := c.MustGet(consts.DBInfoContextKey).(models.JumpServer)
 	handler, err := newResourcesHandler(dbInfo)
 	if err != nil {
@@ -308,7 +322,6 @@ func updateResources(c *gin.Context) {
 		return
 	}
 
-	resourceType := c.Query("m_type")
 	id := c.Param("id")
 	switch resourceType {
 	case Node:
@@ -317,14 +330,9 @@ func updateResources(c *gin.Context) {
 		err = handler.unblockUser(id)
 	case UserResetMFA:
 		err = handler.resetUserMFA(id)
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request type",
-			"details": fmt.Sprintf("Invalid request type: %s", resourceType),
-		})
-		return
+	case Permission:
+		err = handler.updatePerm(c, id)
 	}
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   fmt.Sprintf("Failed to save resource: %v", err.Error()),
@@ -333,7 +341,7 @@ func updateResources(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
+	c.JSON(http.StatusAccepted, gin.H{
 		"message": fmt.Sprintf("Resource[%s] update successfully", resourceType),
 	})
 }
@@ -389,25 +397,22 @@ func deleteResource(c *gin.Context) {
 		handlers = append(handlers, handler)
 	}
 
-	go func(handlers []*ResourcesHandler, cacheKey string, cache *utils.CacheManager) {
-		for _, handler = range handlers {
-			switch resourceType {
-			case Permission:
-				err = handler.deletePerm(id)
-			case Asset:
-				err = handler.deleteAsset(id)
-			}
-			if errors.Is(err, consts.NotFoundError) {
-				continue
-			} else if err == nil {
-				_ = cache.Delete(cacheKey)
-				break
-			} else {
-				// TODO 记录报错，等待轮回程序执行,这里后续写
-			}
+	for _, handler = range handlers {
+		switch resourceType {
+		case Permission:
+			err = handler.deletePerm(id)
+		case Asset:
+			err = handler.deleteAsset(id)
 		}
-	}(handlers, cacheKey, cache)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   fmt.Sprintf("Failed to delete resource: %v", err.Error()),
+				"details": "Database operation failed",
+			})
+			return
+		}
+	}
 	c.JSON(http.StatusAccepted, gin.H{
-		"message": fmt.Sprintf("Resource[%s] deleted successfully", resourceType),
+		"message": fmt.Sprintf("Delete resource[%s] task create success", resourceType),
 	})
 }

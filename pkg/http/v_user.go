@@ -71,11 +71,9 @@ func (h *ResourcesHandler) saveUser(c *gin.Context) (ids []string, err error) {
 			if err != nil {
 				return nil, err
 			}
-
-			if err = h.jmsClient.CreateUser(jmsUser); err != nil {
-				return nil, err
-			}
 			ids = append(ids, user.ID)
+
+			go h.jmsClient.CreateUser(jmsUser)
 		}
 	}
 	return ids, nil
@@ -104,29 +102,28 @@ func (h *ResourcesHandler) saveRole(c *gin.Context) (err error) {
 	return nil
 }
 
-func (h *ResourcesHandler) saveUserGroup(c *gin.Context) (ids []string, err error) {
+func (h *ResourcesHandler) saveUserGroup(c *gin.Context) (err error) {
 	var userGroups []models.UserGroup
 	if err = c.ShouldBindJSON(&userGroups); err != nil {
-		return nil, err
+		return err
 	}
 	for _, group := range userGroups {
 		var count int64
 		if err = h.db.Model(group).Where("id = ?", group.ID).Count(&count).Error; err != nil {
-			return nil, err
+			return err
 		}
 		if count > 0 {
 			if err = h.db.Model(group).Omit("id").Updates(&group).Error; err != nil {
-				return nil, err
+				return err
 			}
 		} else {
 			if err = h.db.Create(&group).Error; err != nil {
-				return nil, err
+				return err
 			}
-			ids = append(ids, group.ID)
 		}
 	}
 
-	return ids, nil
+	return nil
 }
 
 func (h *ResourcesHandler) getUsers(c *gin.Context, limit, offset int) (interface{}, int64, error) {
@@ -187,9 +184,11 @@ func (h *ResourcesHandler) getUsers(c *gin.Context, limit, offset int) (interfac
 }
 
 func (h *ResourcesHandler) unblockUser(id string) error {
-	return h.jmsClient.UnblockUser(id)
+	go h.jmsClient.UnblockUser(id)
+	return nil
 }
 
 func (h *ResourcesHandler) resetUserMFA(id string) error {
-	return h.jmsClient.ResetUserMFA(id)
+	go h.jmsClient.ResetUserMFA(id)
+	return nil
 }

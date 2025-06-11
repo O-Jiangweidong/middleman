@@ -5,13 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"middleman/pkg/config"
-	"middleman/pkg/middleware"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"middleman/pkg/config"
+	"middleman/pkg/middleware"
+	"middleman/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -60,6 +62,14 @@ func (s *HttpServer) Stop() {
 }
 
 func RunForever() {
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	retryManger, err := utils.NewRetryManager(10)
+	if err != nil {
+		log.Fatal(err)
+	}
+	retryManger.Start(cancelCtx)
+
 	httpServer := NewHttpServer()
 	go func() {
 		if err := httpServer.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -71,5 +81,6 @@ func RunForever() {
 	signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	<-gracefulStop
 	httpServer.Stop()
+	cancel()
 	log.Println("所有服务已关闭")
 }
