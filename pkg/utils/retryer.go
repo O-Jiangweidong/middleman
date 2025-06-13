@@ -7,9 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-    "log"
-    "net/http"
+    "github.com/google/uuid"
+    "io"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,11 +18,10 @@ import (
 	"time"
 )
 
-
 var globalRetryer *RetryManager
 
-
 type RequestInfo struct {
+	ID           string            `json:"id"`
 	Method       string            `json:"method"`
 	URL          string            `json:"url"`
 	Body         interface{}       `json:"body"`
@@ -58,22 +58,11 @@ type JSONFileStorage struct {
 	logger *Logger
 }
 
-func getFilenameByReq(req RequestInfo) string {
-	bodyData, err := json.Marshal(req.Body)
-	if err != nil {
-		bodyData = []byte{}
-	}
-	dataToHash := []byte(req.URL + string(bodyData))
-	hash := sha256.Sum256(dataToHash)
-	hashStr := hex.EncodeToString(hash[:16])
-	return fmt.Sprintf("%s.json", hashStr)
-}
-
 func (s *JSONFileStorage) Save(req RequestInfo) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	filename := getFilenameByReq(req)
+	filename := fmt.Sprintf("%s.json", req.ID))
 	req.Filepath = filepath.Join(s.dir, filename)
 
 	data, err := json.MarshalIndent(req, "", "  ")
@@ -175,6 +164,7 @@ func (rm *RetryManager) Start(ctx context.Context) {
 func (rm *RetryManager) AddFailedRequest(method, url string, headers map[string]string, body interface{}, err error) {
 	now := time.Now()
 	req := RequestInfo{
+        ID:           uuid.New().String(),
 		Method:       method,
 		URL:          url,
 		Body:         body,
@@ -316,12 +306,12 @@ func (rm *RetryManager) archiveFailedRequest(req RequestInfo) {
 }
 
 func GetRetryer() *RetryManager {
-    if globalRetryer == nil {
-        retryer, err := NewRetryManager(10)
-        if err != nil {
-            log.Fatalf("Start retry manager failed: %v", err)
-        }
-        globalRetryer = retryer
-    }
-    return globalRetryer
+	if globalRetryer == nil {
+		retryer, err := NewRetryManager(10)
+		if err != nil {
+			log.Fatalf("Start retry manager failed: %v", err)
+		}
+		globalRetryer = retryer
+	}
+	return globalRetryer
 }
