@@ -83,7 +83,7 @@ type Asset struct {
 	Platform Platform  `json:"platform,omitempty" gorm:"foreignKey:PlatformID;references:ID"`
 	Accounts []Account `json:"accounts,omitempty" gorm:"foreignKey:AssetID;constraint:OnDelete:CASCADE"`
 
-	Permissions []AssetPermission `json:"-" gorm:"many2many:perms_assetpermission_assets;joinForeignKey:asset_id;joinReferences:assetpermission_id;constraint:OnDelete:CASCADE"`
+	Permissions []AssetPermission `json:"-" gorm:"many2many:perms_assetpermission_assets;joinForeignKey:asset_id;joinReferences:assetpermission_id;constraint:OnDelete:CASCADE;SaveReference:false"`
 	Nodes       []Node            `json:"nodes" gorm:"many2many:assets_asset_nodes;joinForeignKey:asset_id;joinReferences:node_id;constraint:OnDelete:CASCADE;SaveReference:false"`
 
 	Host     *Host     `json:"-" gorm:"foreignKey:AssetPtrID;constraint:OnDelete:CASCADE"`

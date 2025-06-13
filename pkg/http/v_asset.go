@@ -130,7 +130,7 @@ func (h *ResourcesHandler) getPlatforms(c *gin.Context, limit, offset int) (inte
 	q = h.handleSearch(c, q, searchFields)
 
 	var count int64
-	if err = q.Debug().Count(&count).Limit(limit).Offset(offset).Find(&platforms).Error; err != nil {
+	if err = q.Count(&count).Limit(limit).Offset(offset).Find(&platforms).Error; err != nil {
 		return nil, 0, err
 	}
 	return platforms, count, nil
@@ -151,7 +151,7 @@ func (h *ResourcesHandler) getAssets(c *gin.Context, limit, offset int, category
 		nodeID = c.Query("node_id")
 	}
 
-	q := h.db.Debug().Model(&models.Asset{}).Preload("Platform")
+	q := h.db.Model(&models.Asset{}).Preload("Platform")
 	if nodeID != "" {
 		q = q.Where("? IN (SELECT node_id FROM assets_asset_nodes WHERE asset_id = assets.id)", nodeID)
 	}

@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type AssetPermission struct {
 	ID          string      `json:"id" gorm:"type:uuid;primaryKey"`
@@ -19,10 +22,10 @@ type AssetPermission struct {
 	DateCreated *UTCTime    `json:"date_created" gorm:"type:timestamp with time zone;default:null"`
 	DateUpdated *UTCTime    `json:"date_updated" gorm:"type:timestamp with time zone;default:null"`
 
-	Users      []User      `json:"users" gorm:"many2many:perms_assetpermission_users;joinForeignKey:assetpermission_id;joinReferences:user_id;constraint:OnDelete:CASCADE;SaveReference:false"`
-	UserGroups []UserGroup `json:"user_groups" gorm:"many2many:perms_assetpermission_user_groups;joinForeignKey:assetpermission_id;joinReferences:usergroup_id;constraint:OnDelete:CASCADE;SaveReference:false"`
-	Assets     []Asset     `json:"assets" gorm:"many2many:perms_assetpermission_assets;joinForeignKey:assetpermission_id;joinReferences:asset_id;constraint:OnDelete:CASCADE;SaveReference:false"`
-	Nodes      []Node      `json:"nodes" gorm:"many2many:perms_assetpermission_nodes;joinForeignKey:assetpermission_id;joinReferences:node_id;constraint:OnDelete:CASCADE;SaveReference:false"`
+	Users      []User      `json:"users" gorm:"many2many:perms_assetpermission_users;joinForeignKey:assetpermission_id;joinReferences:user_id;constraint:OnDelete:CASCADE;autoCreate:false;autoUpdate:false"`
+	UserGroups []UserGroup `json:"user_groups" gorm:"many2many:perms_assetpermission_user_groups;joinForeignKey:assetpermission_id;joinReferences:usergroup_id;constraint:OnDelete:CASCADE;autoCreate:false;autoUpdate:false"`
+	Assets     []Asset     `json:"assets" gorm:"many2many:perms_assetpermission_assets;joinForeignKey:assetpermission_id;joinReferences:asset_id;constraint:OnDelete:CASCADE;autoCreate:false;autoUpdate:false"`
+	Nodes      []Node      `json:"nodes" gorm:"many2many:perms_assetpermission_nodes;joinForeignKey:assetpermission_id;joinReferences:node_id;constraint:OnDelete:CASCADE;autoCreate:false;autoUpdate:false"`
 
 	UserIds        []string `json:"user_ids,omitempty" gorm:"-"`
 	UserGroupIds   []string `json:"user_group_ids,omitempty" gorm:"-"`
@@ -44,14 +47,32 @@ func (p AssetPermission) IsValid() bool {
 	return false
 }
 
+type StringSlice []string
+
+func (s StringSlice) MarshalJSON() ([]byte, error) {
+	if s == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal([]string(s))
+}
+
+func (s *StringSlice) UnmarshalJSON(data []byte) error {
+	var items []string
+	if err := json.Unmarshal(data, &items); err != nil {
+		return err
+	}
+	*s = items
+	return nil
+}
+
 type JmsAssetPermission struct {
 	AssetPermission
 
-	Users      []string `json:"users"`
-	UserGroups []string `json:"user_groups"`
-	Assets     []string `json:"assets"`
-	Nodes      []string `json:"nodes"`
-	Actions    []string `json:"actions"`
+	Users      StringSlice `json:"users"`
+	UserGroups StringSlice `json:"user_groups"`
+	Assets     StringSlice `json:"assets"`
+	Nodes      StringSlice `json:"nodes"`
+	Actions    []string    `json:"actions"`
 }
 
 func (p AssetPermission) ToJms() JmsAssetPermission {

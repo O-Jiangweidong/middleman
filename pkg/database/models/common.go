@@ -15,12 +15,15 @@ const utcFormat = "2006-01-02 15:04:05.000000-07:00"
 
 var (
 	supportedTimeFormat = []string{
-		utcFormat, time.RFC3339, "2006/01/02 15:04:05 +0800",
+		utcFormat,
+		time.RFC3339,
+		"2006-01-02 15:04:05-07:00",
+		"2006/01/02 15:04:05 +0800",
 	}
 )
 
 type OnlyID struct {
-	ID string `json:"id"`
+	ID string `json:"id" gorm:"primary_key"`
 }
 
 type LabelValue struct {

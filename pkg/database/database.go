@@ -108,6 +108,9 @@ func (dm *Manager) GetDB(name string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to connect to new database %s: %v", name, err)
 	}
 
+	if config.GetConf().LogLevel == "debug" {
+		db = db.Debug()
+	}
 	dm.dbs[name] = db
 	return db, nil
 }

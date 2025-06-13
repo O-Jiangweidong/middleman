@@ -78,7 +78,7 @@ func (h *ResourcesHandler) getChildrenNodes(c *gin.Context) (interface{}, int64,
 		queryKey := c.DefaultQuery("key", DefaultNodeKey)
 		q = q.Where("key = ? OR parent_key = ?", queryKey, queryKey)
 	}
-	if err = q.Debug().Find(&nodes).Error; err != nil {
+	if err = q.Find(&nodes).Error; err != nil {
 		return nil, 0, err
 	}
 
