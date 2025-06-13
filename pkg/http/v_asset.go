@@ -238,11 +238,11 @@ func (h *ResourcesHandler) getAccounts(c *gin.Context, limit, offset int) (inter
 	return accounts, count, nil
 }
 
-func (h *ResourcesHandler) deleteAsset(id string) (err error) {
+func (h *ResourcesHandler) deleteAsset(id, cacheKey string) (err error) {
 	err = h.db.Where("id = ?", id).Delete(&models.Asset{}).Error
 	if err != nil {
 		return err
 	}
-	go h.jmsClient.RemoveAsset(id)
+	go h.jmsClient.RemoveAsset(id, cacheKey)
 	return nil
 }

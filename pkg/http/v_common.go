@@ -400,9 +400,9 @@ func deleteResource(c *gin.Context) {
 	for _, handler = range handlers {
 		switch resourceType {
 		case Permission:
-			err = handler.deletePerm(id)
+			err = handler.deletePerm(id, cacheKey)
 		case Asset:
-			err = handler.deleteAsset(id)
+			err = handler.deleteAsset(id, cacheKey)
 		}
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{

@@ -8,13 +8,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
+    "log"
+    "net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
+
+
+var globalRetryer *RetryManager
+
 
 type RequestInfo struct {
 	Method       string            `json:"method"`
@@ -188,12 +193,12 @@ func (rm *RetryManager) retryWorker(ctx context.Context) {
 	ticker := time.NewTicker(rm.checkInterval)
 	defer ticker.Stop()
 
-	rm.logger.Debug("Start worker [retryer]")
+	rm.logger.Debug("Start worker -> [retryer]")
 
 	for {
 		select {
 		case <-ctx.Done():
-			rm.logger.Info("retry-worker exiting.")
+			rm.logger.Info(" Worker [retryer] is exiting.")
 			return
 		case <-ticker.C:
 			rm.checkAndRetryRequests()
@@ -308,4 +313,15 @@ func (rm *RetryManager) archiveFailedRequest(req RequestInfo) {
 
 	rm.logger.Info(fmt.Sprintf("请求已归档到文件: %s (最大重试次数: %d)",
 		filePath, req.MaxRetries))
+}
+
+func GetRetryer() *RetryManager {
+    if globalRetryer == nil {
+        retryer, err := NewRetryManager(10)
+        if err != nil {
+            log.Fatalf("Start retry manager failed: %v", err)
+        }
+        globalRetryer = retryer
+    }
+    return globalRetryer
 }

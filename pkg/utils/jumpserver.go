@@ -1,20 +1,28 @@
 package utils
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"middleman/pkg/consts"
-	"net/http"
-
-	"middleman/pkg/database/models"
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    
+    "middleman/pkg/database/models"
 )
 
 type JumpServer struct {
 	endpoint   string
 	privateKey string
 	client     *http.Client
+	retryer    *RetryManager
+}
+
+func (jms *JumpServer) getHeaders() map[string]string {
+	return map[string]string{
+		"Content-Type":      "application/json",
+		"Authorization":     "Token " + jms.privateKey,
+		"Middleman-Version": "1.0",
+	}
 }
 
 func (jms *JumpServer) doRequest(method, path string, body interface{}) (*http.Response, error) {
@@ -33,10 +41,9 @@ func (jms *JumpServer) doRequest(method, path string, body interface{}) (*http.R
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Token "+jms.privateKey)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Middleman-Version", "1.0")
-
+	for key, value := range jms.getHeaders() {
+		req.Header.Set(key, value)
+	}
 	return jms.client.Do(req)
 }
 
@@ -59,113 +66,123 @@ func (jms *JumpServer) Get(url string) error {
 	return nil
 }
 
-func (jms *JumpServer) Post(url string, obj interface{}) error {
+func (jms *JumpServer) Post(url string, obj interface{}) {
 	resp, err := jms.doRequest("POST", url, obj)
 	if err != nil {
-		return fmt.Errorf("send request failed: %w", err)
+		jms.retryer.AddFailedRequest("POST", url, jms.getHeaders(), obj, err)
+		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response failed: %w", err)
+		jms.retryer.AddFailedRequest("POST", url, jms.getHeaders(), obj, err)
+		return
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("create failed，status code: %d, body: %s",
-			resp.StatusCode, string(body))
+		err = fmt.Errorf("create failed，status code: %d, body: %s", resp.StatusCode, string(body))
+		jms.retryer.AddFailedRequest("POST", url, jms.getHeaders(), obj, err)
+		return
 	}
-	return nil
 }
 
-func (jms *JumpServer) Patch(url string, obj interface{}) error {
+func (jms *JumpServer) Patch(url string, obj interface{}) {
 	resp, err := jms.doRequest("PATCH", url, obj)
 	if err != nil {
-		return fmt.Errorf("send request failed: %w", err)
+		jms.retryer.AddFailedRequest("PATCH", url, jms.getHeaders(), obj, err)
+		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response failed: %w", err)
+		jms.retryer.AddFailedRequest("PATCH", url, jms.getHeaders(), obj, err)
+		return
 	}
 
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("create failed，status code: %d, body: %s",
-			resp.StatusCode, string(body))
+		err = fmt.Errorf("create failed，status code: %d, body: %s", resp.StatusCode, string(body))
+		jms.retryer.AddFailedRequest("PATCH", url, jms.getHeaders(), obj, err)
+		return
 	}
-	return nil
+	return
 }
 
-func (jms *JumpServer) Put(url string, obj interface{}) error {
+func (jms *JumpServer) Put(url string, obj interface{}) {
 	resp, err := jms.doRequest("PUT", url, obj)
 	if err != nil {
-		return fmt.Errorf("send request failed: %w", err)
+		jms.retryer.AddFailedRequest("PUT", url, jms.getHeaders(), obj, err)
+		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response failed: %w", err)
+		jms.retryer.AddFailedRequest("PUT", url, jms.getHeaders(), obj, err)
+		return
 	}
 
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("put failed，status code: %d, body: %s",
-			resp.StatusCode, string(body))
+		err = fmt.Errorf("put failed，status code: %d, body: %s", resp.StatusCode, string(body))
+		jms.retryer.AddFailedRequest("PUT", url, jms.getHeaders(), obj, err)
+		return
 	}
-	return nil
 }
 
-func (jms *JumpServer) Delete(url string) error {
+func (jms *JumpServer) Delete(url, cacheKey string) {
 	resp, err := jms.doRequest("DELETE", url, nil)
 	if err != nil {
-		return fmt.Errorf("send request failed: %w", err)
+		jms.retryer.AddFailedRequest("DELETE", url, jms.getHeaders(), nil, err)
+		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response failed: %w", err)
+		jms.retryer.AddFailedRequest("DELETE", url, jms.getHeaders(), nil, err)
+		return
 	}
 
-	if resp.StatusCode == 404 {
-		return consts.NotFoundError
+	if resp.StatusCode >= 300 && resp.StatusCode != 404 {
+		err = fmt.Errorf("delete failed，status code: %d, body: %s", resp.StatusCode, string(body))
+		jms.retryer.AddFailedRequest("DELETE", url, jms.getHeaders(), nil, err)
+		return
 	}
-
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("delete failed，status code: %d, body: %s",
-			resp.StatusCode, string(body))
-	}
-	// TODO 这里删除成功要把缓存内容同步清除
-	return nil
+	_ = GetCache().Delete(cacheKey)
 }
 
-func (jms *JumpServer) CreateUser(user models.JMSUser) error {
+func (jms *JumpServer) CreateUser(user models.JMSUser) {
 	url := "/api/v1/users/users/"
-	return jms.Post(url, user)
+	jms.Post(url, user)
 }
 
-func (jms *JumpServer) CreateChildrenNode(node models.JMSNode) error {
+func (jms *JumpServer) CreateChildrenNode(node models.JMSNode) {
 	url := fmt.Sprintf("/api/v1/assets/nodes/%s/children/", node.ParentID)
-	return jms.Post(url, node)
+	jms.Post(url, node)
 }
 
-func (jms *JumpServer) UpdateNode(id string, data interface{}) error {
+func (jms *JumpServer) UpdateNode(id string, data interface{}) {
 	url := fmt.Sprintf("/api/v1/assets/nodes/%s/", id)
-	return jms.Patch(url, data)
+	jms.Patch(url, data)
 }
 
-func (jms *JumpServer) CreateNode(node models.Node) error {
+func (jms *JumpServer) CreateNode(node models.Node) {
 	url := "/api/v1/assets/nodes/?action=create"
-	return jms.Post(url, node)
+	jms.Post(url, node)
 }
 
-func (jms *JumpServer) CreatePerm(perm models.JmsAssetPermission) error {
+func (jms *JumpServer) CreatePerm(perm models.JmsAssetPermission) {
 	url := "/api/v1/perms/asset-permissions/"
-	return jms.Post(url, perm)
+	jms.Post(url, perm)
 }
 
-func (jms *JumpServer) CreateAsset(asset interface{}) error {
+func (jms *JumpServer) UpdatePerm(perm models.JmsAssetPermission) {
+	url := fmt.Sprintf("/api/v1/perms/asset-permissions/%s/", perm.ID)
+	jms.Put(url, perm)
+}
+
+func (jms *JumpServer) CreateAsset(asset interface{}) {
 	var category string
 	var newAsset models.Asset
 	switch v := asset.(type) {
@@ -173,35 +190,35 @@ func (jms *JumpServer) CreateAsset(asset interface{}) error {
 		category = "hosts"
 		newAsset = v.Asset
 	default:
-		return fmt.Errorf("unsupport category")
+		return
 	}
 	url := fmt.Sprintf("/api/v1/assets/%s/?platform=%v", category, newAsset.PlatformID)
-	return jms.Post(url, newAsset.ToJms())
+	jms.Post(url, newAsset.ToJms())
 }
 
-func (jms *JumpServer) NodeWithAssetsRelation(action, nodeID string, data interface{}) (err error) {
+func (jms *JumpServer) NodeWithAssetsRelation(action, nodeID string, data interface{}) {
 	url := fmt.Sprintf("/api/v1/assets/nodes/%s/assets/%s/", nodeID, action)
-	return jms.Put(url, data)
+	jms.Put(url, data)
 }
 
-func (jms *JumpServer) RemoveAsset(id string) error {
+func (jms *JumpServer) RemoveAsset(id, cacheKey string) {
 	url := fmt.Sprintf("/api/v1/assets/assets/%s/", id)
-	return jms.Delete(url)
+	jms.Delete(url, cacheKey)
 }
 
-func (jms *JumpServer) DeletePerm(id string) error {
+func (jms *JumpServer) DeletePerm(id, cacheKey string) {
 	url := fmt.Sprintf("/api/v1/perms/asset-permissions/%s/", id)
-	return jms.Delete(url)
+	jms.Delete(url, cacheKey)
 }
 
-func (jms *JumpServer) UnblockUser(id string) error {
+func (jms *JumpServer) UnblockUser(id string) {
 	url := fmt.Sprintf("/api/v1/users/users/%s/unblock", id)
-	return jms.Patch(url, nil)
+	jms.Patch(url, nil)
 }
 
-func (jms *JumpServer) ResetUserMFA(id string) error {
+func (jms *JumpServer) ResetUserMFA(id string) {
 	url := fmt.Sprintf("/api/v1/users/users/%s/unblock", id)
-	return jms.Get(url)
+	_ = jms.Get(url)
 }
 
 func NewJumpServer(endpoint string, privateKey string) *JumpServer {
@@ -209,5 +226,6 @@ func NewJumpServer(endpoint string, privateKey string) *JumpServer {
 		endpoint:   endpoint,
 		privateKey: privateKey,
 		client:     &http.Client{},
+		retryer:    GetRetryer(),
 	}
 }

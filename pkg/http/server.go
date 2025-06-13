@@ -64,10 +64,7 @@ func (s *HttpServer) Stop() {
 func RunForever() {
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	retryManger, err := utils.NewRetryManager(10)
-	if err != nil {
-		log.Fatal(err)
-	}
+	retryManger := utils.GetRetryer()
 	retryManger.Start(cancelCtx)
 
 	httpServer := NewHttpServer()

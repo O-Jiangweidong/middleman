@@ -94,21 +94,59 @@ func (h *ResourcesHandler) getPerms(c *gin.Context, limit, offset int) (interfac
 	return perms, count, nil
 }
 
-func (h *ResourcesHandler) deletePerm(id string) (err error) {
+func (h *ResourcesHandler) deletePerm(id, cacheKey string) (err error) {
 	err = h.db.Where("id = ?", id).Delete(&models.AssetPermission{}).Error
 	if err != nil {
 		return err
 	}
-	go h.jmsClient.DeletePerm(id)
+	go h.jmsClient.DeletePerm(id, cacheKey)
 	return nil
 }
 
 func (h *ResourcesHandler) updatePerm(c *gin.Context, id string) (err error) {
-	type reqPerm struct {
-	}
-	var req reqPerm
-	if err = c.ShouldBindJSON(&req); err != nil {
+	var perm models.AssetPermission
+	if err = c.ShouldBindJSON(&perm); err != nil {
 		return err
 	}
+
+	var count int64
+	if err = h.db.Model(perm).Where("id = ?", id).Limit(1).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return fmt.Errorf("permission %s not found", perm.ID)
+	}
+
+	perm.OrgID = models.DefaultOrgID
+	var users []models.User
+	if len(perm.UserIds) > 0 {
+		h.db.Model(&users).Where("id IN ?", perm.UserIds).Find(&users)
+	}
+	perm.Users = users
+
+	var userGroups []models.UserGroup
+	if len(perm.UserGroupIds) > 0 {
+		h.db.Model(&userGroups).Where("id IN ?", perm.UserGroupIds).Find(&userGroups)
+	}
+	perm.UserGroups = userGroups
+
+	var assets []models.Asset
+	if len(perm.AssetIds) > 0 {
+		h.db.Model(&assets).Where("id IN ?", perm.AssetIds).Find(&assets)
+	}
+	perm.Assets = assets
+
+	var nodes []models.Node
+	if len(perm.NodeIds) > 0 {
+		h.db.Model(&nodes).Where("id IN ?", perm.NodeIds).Find(&nodes)
+	}
+	perm.Nodes = nodes
+
+	if err = h.db.Debug().Model(perm).Omit("id").Updates(&perm).Error; err != nil {
+		return err
+	}
+
+	h.jmsClient.UpdatePerm(perm.ToJms())
 	return nil
+
 }
